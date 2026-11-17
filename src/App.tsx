@@ -281,19 +281,25 @@ export default function App() {
 
   if (needsOnboarding) {
     return (
-      <FirstRunOnboarding
-        onComplete={completeOnboarding}
-      />
+      <>
+        <OfflineIndicator />
+        <FirstRunOnboarding
+          onComplete={completeOnboarding}
+        />
+      </>
     );
   }
 
   if (locked && db.settings.pinEnabled && db.settings.pinHash) {
     return (
-      <PinLockOverlay
-        expectedHash={db.settings.pinHash}
-        pinSalt={db.settings.pinSalt}
-        onUnlock={() => setLocked(false)}
-      />
+      <>
+        <OfflineIndicator />
+        <PinLockOverlay
+          expectedHash={db.settings.pinHash}
+          pinSalt={db.settings.pinSalt}
+          onUnlock={() => setLocked(false)}
+        />
+      </>
     );
   }
 
