@@ -1,0 +1,6 @@
+{
+  "name": "BukuKu — Catat Uang & Buku Akuntansi",
+  "description": "Aplikasi pencatat keuangan offline-first bergaya buku akuntansi Indonesia dengan jurnal debit-kredit otomatis, laporan Neraca Saldo, Laba Rugi, visualisasi Neraca 3D, dan sinkronisasi Google Sheets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
