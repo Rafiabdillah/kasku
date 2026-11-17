@@ -9,6 +9,8 @@ import {
 import firebaseConfig from '../../firebase-applet-config.json';
 import type { LedgerDatabase } from '../core/types';
 import { formatBulanTahun, formatTanggalID, todayLocalDate } from '../core/format';
+import { sanitizeSpreadsheetText } from '../core/safeText';
+import { REPORT_TABS, REPORT_TAB_TITLES, parseSpreadsheetId, tabRange } from '../core/sheetsUtils';
 import {
   buildHomeSummary,
   buildJurnalUmum,
@@ -16,6 +18,7 @@ import {
   buildNeracaSaldo,
 } from '../core/reports';
 export { parseSpreadsheetRowsToInputs, type ParsedSheetImportResult } from '../core/sheetsImport';
+export { REPORT_TABS, parseSpreadsheetId } from '../core/sheetsUtils';
 
 export const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 
@@ -29,6 +32,19 @@ for (const scope of SCOPES) {
 
 let isSigningIn = false;
 let cachedAccessToken: string | null = null;
+
+const AUTH_EXPIRED_MESSAGE =
+  'Sesi Google berakhir. Silakan masuk kembali dengan akun Google Anda.';
+
+function handleUnauthorized(status: number): void {
+  if (status === 401) {
+    cachedAccessToken = null;
+  }
+}
+
+function authErrorForStatus(status: number, fallback: string): string {
+  return status === 401 ? AUTH_EXPIRED_MESSAGE : fallback;
+}
 
 export function initGoogleSheetsAuth(
   onAuthenticated: (user: User, token: string) => void,
@@ -66,6 +82,10 @@ export function getCachedSheetsToken(): string | null {
   return cachedAccessToken;
 }
 
+export function clearCachedSheetsToken(): void {
+  cachedAccessToken = null;
+}
+
 export async function signOutGoogleSheets(): Promise<void> {
   cachedAccessToken = null;
   await auth.signOut();
@@ -89,8 +109,11 @@ export async function fetchSpreadsheetMetadata(
     },
   );
   if (!res.ok) {
+    handleUnauthorized(res.status);
     const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `Gagal membaca spreadsheet (${res.status}).`);
+    throw new Error(
+      authErrorForStatus(res.status, err?.error?.message || `Gagal membaca spreadsheet (${res.status}).`),
+    );
   }
   const data = await res.json();
   return {
@@ -118,8 +141,11 @@ export async function readSheetValues(
     },
   );
   if (!res.ok) {
+    handleUnauthorized(res.status);
     const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `Gagal membaca isi tab (${res.status}).`);
+    throw new Error(
+      authErrorForStatus(res.status, err?.error?.message || `Gagal membaca isi tab (${res.status}).`),
+    );
   }
   const data = await res.json();
   return (data.values as string[][]) || [];
@@ -132,10 +158,18 @@ function buildWorkbookPayloads(db: LedgerDatabase, month: string) {
   const labaRugi = buildLabaRugi(db, month);
 
   const ringkasanRows: Array<Array<string | number>> = [
-    ['BukuKu — Ringkasan Keuangan', db.settings.ownerName, `Tanggal: ${formatTanggalID(todayLocalDate())}`],
+    [
+      'BukuKu — Ringkasan Keuangan',
+      sanitizeSpreadsheetText(db.settings.ownerName),
+      `Tanggal: ${formatTanggalID(todayLocalDate())}`,
+    ],
     [],
     ['Dompet', 'Kode Akun', 'Saldo (Rp)'],
-    ...summary.wallets.map((w) => [w.account.name, w.account.code, w.balance]),
+    ...summary.wallets.map((w) => [
+      sanitizeSpreadsheetText(w.account.name),
+      sanitizeSpreadsheetText(w.account.code),
+      w.balance,
+    ]),
     ['TOTAL SALDO DOMPET', '', summary.totalWalletBalance],
     [],
     [`Ringkasan ${formatBulanTahun(month)}`, 'Nominal (Rp)'],
@@ -153,10 +187,10 @@ function buildWorkbookPayloads(db: LedgerDatabase, month: string) {
     for (const item of entry.lines) {
       jurnalRows.push([
         formatTanggalID(entry.journal.date),
-        entry.journal.number,
-        entry.journal.description,
-        item.account.code,
-        item.account.name,
+        sanitizeSpreadsheetText(entry.journal.number),
+        sanitizeSpreadsheetText(entry.journal.description),
+        sanitizeSpreadsheetText(item.account.code),
+        sanitizeSpreadsheetText(item.account.name),
         item.line.debit,
         item.line.credit,
         entry.journal.voided_at ? 'VOID' : entry.journal.kind === 'pembalik' ? 'PEMBALIK' : 'AKTIF',
@@ -167,8 +201,8 @@ function buildWorkbookPayloads(db: LedgerDatabase, month: string) {
   const neracaRows: Array<Array<string | number>> = [
     ['No. Akun', 'Nama Akun', 'Tipe', 'Debit (Rp)', 'Kredit (Rp)'],
     ...neraca.rows.map((r) => [
-      r.account.code,
-      r.account.name,
+      sanitizeSpreadsheetText(r.account.code),
+      sanitizeSpreadsheetText(r.account.name),
       r.account.type,
       r.debit,
       r.credit,
@@ -177,12 +211,22 @@ function buildWorkbookPayloads(db: LedgerDatabase, month: string) {
   ];
 
   const labaRugiRows: Array<Array<string | number>> = [
-    [`Laporan Laba Rugi — ${formatBulanTahun(month)}`, db.settings.ownerName],
+    [`Laporan Laba Rugi — ${formatBulanTahun(month)}`, sanitizeSpreadsheetText(db.settings.ownerName)],
     [],
     ['Kode', 'Nama Akun', 'Kategori', 'Nominal (Rp)'],
-    ...labaRugi.revenues.map((r) => [r.account.code, r.account.name, 'Pendapatan', r.amount]),
+    ...labaRugi.revenues.map((r) => [
+      sanitizeSpreadsheetText(r.account.code),
+      sanitizeSpreadsheetText(r.account.name),
+      'Pendapatan',
+      r.amount,
+    ]),
     ['', 'Total Pendapatan', '', labaRugi.totalRevenue],
-    ...labaRugi.expenses.map((e) => [e.account.code, e.account.name, 'Beban', e.amount]),
+    ...labaRugi.expenses.map((e) => [
+      sanitizeSpreadsheetText(e.account.code),
+      sanitizeSpreadsheetText(e.account.name),
+      'Beban',
+      e.amount,
+    ]),
     ['', 'Total Beban', '', labaRugi.totalExpense],
     ['', labaRugi.netProfit >= 0 ? 'LABA BERSIH' : 'RUGI BERSIH', '', labaRugi.netProfit],
   ];
@@ -205,17 +249,23 @@ export async function createBukuKuSpreadsheet(
     body: JSON.stringify({
       properties: { title },
       sheets: [
-        { properties: { title: 'Ringkasan' } },
-        { properties: { title: 'Jurnal Umum' } },
-        { properties: { title: 'Neraca Saldo' } },
-        { properties: { title: 'Laba Rugi' } },
+        { properties: { title: REPORT_TABS.ringkasan } },
+        { properties: { title: REPORT_TABS.jurnal } },
+        { properties: { title: REPORT_TABS.neraca } },
+        { properties: { title: REPORT_TABS.labaRugi } },
       ],
     }),
   });
 
   if (!createRes.ok) {
+    handleUnauthorized(createRes.status);
     const err = await createRes.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `Gagal membuat Google Spreadsheet (${createRes.status}).`);
+    throw new Error(
+      authErrorForStatus(
+        createRes.status,
+        err?.error?.message || `Gagal membuat Google Spreadsheet (${createRes.status}).`,
+      ),
+    );
   }
 
   const created = await createRes.json();
@@ -242,8 +292,7 @@ export async function syncToExistingSpreadsheet(
 ): Promise<SpreadsheetMeta> {
   const meta = await fetchSpreadsheetMetadata(accessToken, spreadsheetId);
   const existingTitles = new Set(meta.sheets.map((s) => s.title));
-  const targetTabs = ['Ringkasan', 'Jurnal Umum', 'Neraca Saldo', 'Laba Rugi'];
-  const missingTabs = targetTabs.filter((t) => !existingTitles.has(t));
+  const missingTabs = REPORT_TAB_TITLES.filter((t) => !existingTitles.has(t));
 
   if (missingTabs.length > 0) {
     const batchRes = await fetch(
@@ -262,8 +311,14 @@ export async function syncToExistingSpreadsheet(
       },
     );
     if (!batchRes.ok) {
+      handleUnauthorized(batchRes.status);
       const err = await batchRes.json().catch(() => ({}));
-      throw new Error(err?.error?.message || 'Gagal menyiapkan tab laporan di spreadsheet.');
+      throw new Error(
+        authErrorForStatus(
+          batchRes.status,
+          err?.error?.message || 'Gagal menyiapkan tab laporan di spreadsheet.',
+        ),
+      );
     }
   }
 
@@ -288,12 +343,19 @@ async function writeWorkbookData(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        ranges: ['Ringkasan!A:Z', "'Jurnal Umum'!A:Z", "'Neraca Saldo'!A:Z", "'Laba Rugi'!A:Z"],
+        ranges: REPORT_TAB_TITLES.map((t) => tabRange(t, 'A:Z')),
       }),
     },
   );
   if (!clearRes.ok) {
-    throw new Error('Gagal membersihkan data lama sebelum sinkronisasi.');
+    handleUnauthorized(clearRes.status);
+    const err = await clearRes.json().catch(() => ({}));
+    throw new Error(
+      authErrorForStatus(
+        clearRes.status,
+        err?.error?.message || 'Gagal membersihkan data lama sebelum sinkronisasi.',
+      ),
+    );
   }
 
   const updateRes = await fetch(
@@ -307,17 +369,23 @@ async function writeWorkbookData(
       body: JSON.stringify({
         valueInputOption: 'USER_ENTERED',
         data: [
-          { range: 'Ringkasan!A1', values: ringkasanRows },
-          { range: "'Jurnal Umum'!A1", values: jurnalRows },
-          { range: "'Neraca Saldo'!A1", values: neracaRows },
-          { range: "'Laba Rugi'!A1", values: labaRugiRows },
+          { range: tabRange(REPORT_TABS.ringkasan, 'A1'), values: ringkasanRows },
+          { range: tabRange(REPORT_TABS.jurnal, 'A1'), values: jurnalRows },
+          { range: tabRange(REPORT_TABS.neraca, 'A1'), values: neracaRows },
+          { range: tabRange(REPORT_TABS.labaRugi, 'A1'), values: labaRugiRows },
         ],
       }),
     },
   );
 
   if (!updateRes.ok) {
+    handleUnauthorized(updateRes.status);
     const err = await updateRes.json().catch(() => ({}));
-    throw new Error(err?.error?.message || 'Gagal menulis laporan ke Google Sheets.');
+    throw new Error(
+      authErrorForStatus(
+        updateRes.status,
+        err?.error?.message || 'Gagal menulis laporan ke Google Sheets.',
+      ),
+    );
   }
 }

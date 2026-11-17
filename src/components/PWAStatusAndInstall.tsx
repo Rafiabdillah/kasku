@@ -7,11 +7,31 @@ export function OfflineIndicator() {
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   );
+  const [registration, setRegistration] = useState<ServiceWorkerRegistration | null>(null);
 
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
-  } = useRegisterSW();
+  } = useRegisterSW({
+    onRegisteredSW(_swUrl, reg) {
+      setRegistration(reg ?? null);
+    },
+  });
+
+  useEffect(() => {
+    if (!registration) return;
+
+    const checkForUpdate = () => {
+      if (document.visibilityState === 'visible') void registration.update();
+    };
+    const interval = window.setInterval(checkForUpdate, 60 * 60 * 1000);
+    document.addEventListener('visibilitychange', checkForUpdate);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', checkForUpdate);
+    };
+  }, [registration]);
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);

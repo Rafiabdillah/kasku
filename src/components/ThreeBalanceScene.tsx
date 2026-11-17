@@ -174,6 +174,7 @@ export function ThreeBalanceScene({
   const [explodeLevel, setExplodeLevel] = useState<number>(0);
   const [dockCollapsed, setDockCollapsed] = useState<boolean>(false);
   const [contextLost, setContextLost] = useState<boolean>(false);
+  const [renderFailed, setRenderFailed] = useState<boolean>(false);
 
   const explodeTargetRef = useRef<number>(0);
   explodeTargetRef.current = explodeLevel;
@@ -201,17 +202,23 @@ export function ThreeBalanceScene({
     const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 60);
     camera.position.set(...CAMERA_PRESETS.isometrik.pos);
 
-    const renderer = new THREE.WebGLRenderer({
-      antialias: !isSoftwareGl,
-      powerPreference: 'high-performance',
-    });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: !isSoftwareGl,
+        powerPreference: 'high-performance',
+      });
+    } catch {
+      setRenderFailed(true);
+      return;
+    }
     renderer.setSize(width, height);
     renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
     renderer.shadowMap.enabled = !isSoftwareGl;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
 
     const handleContextLost = (e: Event) => {
       e.preventDefault();
@@ -933,6 +940,50 @@ export function ThreeBalanceScene({
         </div>
       )}
 
+      {renderFailed && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[#EFECE5] p-4">
+          <div className="w-full max-w-md rounded-xl border border-[#D6D3CB] bg-white p-5 space-y-3">
+            <p className="font-serif text-base font-semibold text-[#18181B]">
+              Visualisasi 3D tidak tersedia
+            </p>
+            <p className="text-xs text-[#57534E]">
+              Browser ini tidak mendukung WebGL. Seluruh pencatatan dan laporan tetap berjalan
+              normal.
+            </p>
+            <dl className="grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-lg bg-[#F8F7F4] px-3 py-2">
+                <dt className="text-[#57534E]">Total Aset</dt>
+                <dd className="font-mono font-semibold text-[#14532D] tabular-nums">
+                  {formatRupiahTitle(metrics.totalAssets)}
+                </dd>
+              </div>
+              <div className="rounded-lg bg-[#F8F7F4] px-3 py-2">
+                <dt className="text-[#57534E]">Total Utang</dt>
+                <dd className="font-mono font-semibold text-[#18181B] tabular-nums">
+                  {formatRupiahTitle(metrics.totalDebt)}
+                </dd>
+              </div>
+              <div className="rounded-lg bg-[#F8F7F4] px-3 py-2">
+                <dt className="text-[#57534E]">Total Ekuitas</dt>
+                <dd className="font-mono font-semibold text-[#18181B] tabular-nums">
+                  {formatRupiahTitle(metrics.totalEquity)}
+                </dd>
+              </div>
+              <div className="rounded-lg bg-[#F8F7F4] px-3 py-2">
+                <dt className="text-[#57534E]">Laba Bersih Bulan Ini</dt>
+                <dd
+                  className={`font-mono font-semibold tabular-nums ${
+                    metrics.monthlyNet >= 0 ? 'text-[#14532D]' : 'text-[#B91C1C]'
+                  }`}
+                >
+                  {formatRupiahTitle(metrics.monthlyNet)}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      )}
+
       {/* Top-Left Minimal Spec Header (solid/rgba surface, no backdrop-filter over WebGL) */}
       <div className="pointer-events-none absolute top-3 left-3 right-3 flex items-start justify-between gap-3">
         <div className="pointer-events-auto rounded-lg border border-[#D6D3CB] bg-[#FFFFFF]/95 px-3.5 py-2.5 shadow-sm">
@@ -956,7 +1007,8 @@ export function ThreeBalanceScene({
       </div>
 
       {/* Collapsible Bottom Control Dock (solid/rgba surface, zero backdrop-blur) */}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[min(94%,740px)] flex flex-col items-center">
+      {!renderFailed && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[min(94%,740px)] flex flex-col items-center">
         <button
           type="button"
           onClick={() => setDockCollapsed((v) => !v)}
@@ -1015,7 +1067,8 @@ export function ThreeBalanceScene({
             </div>
           </div>
         )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

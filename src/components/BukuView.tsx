@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Download, FileSpreadsheet, Maximize2, Minimize2 } from 'lucide-react';
 import type { LedgerDatabase } from '../core/types';
 import {
@@ -29,14 +29,6 @@ import {
   exportNeracaSaldoCSV,
   triggerFileDownload,
 } from '../services/storage';
-import {
-  exportBukuBesarPDF,
-  exportBukuKasPDF,
-  exportJurnalUmumPDF,
-  exportLabaRugiPDF,
-  exportNeracaPDF,
-  exportNeracaSaldoPDF,
-} from '../services/pdfExport';
 
 interface BukuViewProps {
   db: LedgerDatabase;
@@ -51,6 +43,15 @@ export function BukuView({ db }: BukuViewProps) {
   const [selectedAccountId, setSelectedAccountId] = useState<string>('acc-1101');
   const [selectedWalletId, setSelectedWalletId] = useState<string>('all');
   const [wideLandscape, setWideLandscape] = useState<boolean>(false);
+  const [pdfBusy, setPdfBusy] = useState<boolean>(false);
+  const [exportMsg, setExportMsg] = useState<string>('');
+
+  useEffect(() => {
+    if (db.accounts.some((a) => a.id === selectedAccountId)) return;
+    const fallback =
+      db.accounts.find((a) => a.code === '1101')?.id ?? db.accounts[0]?.id ?? '';
+    setSelectedAccountId(fallback);
+  }, [db.accounts, selectedAccountId]);
 
   const availableMonths = useMemo(() => {
     const set = new Set<string>([currentLocalMonth()]);
@@ -125,14 +126,23 @@ export function BukuView({ db }: BukuViewProps) {
     };
   }, [reportTab, db.settings.ownerName, month, neracaUpTo, bukuBesar]);
 
-  const handleExportPDF = () => {
-    if (reportTab === 'jurnal') exportJurnalUmumPDF(db, month);
-    else if (reportTab === 'buku_besar') exportBukuBesarPDF(db, selectedAccountId, month);
-    else if (reportTab === 'buku_kas')
-      exportBukuKasPDF(db, selectedWalletId === 'all' ? undefined : selectedWalletId, month);
-    else if (reportTab === 'neraca') exportNeracaSaldoPDF(db, month);
-    else if (reportTab === 'neraca_posisi') exportNeracaPDF(db, month);
-    else exportLabaRugiPDF(db, month);
+  const handleExportPDF = async () => {
+    setExportMsg('');
+    setPdfBusy(true);
+    try {
+      const pdf = await import('../services/pdfExport');
+      if (reportTab === 'jurnal') pdf.exportJurnalUmumPDF(db, month);
+      else if (reportTab === 'buku_besar') pdf.exportBukuBesarPDF(db, selectedAccountId, month);
+      else if (reportTab === 'buku_kas')
+        pdf.exportBukuKasPDF(db, selectedWalletId === 'all' ? undefined : selectedWalletId, month);
+      else if (reportTab === 'neraca') pdf.exportNeracaSaldoPDF(db, month);
+      else if (reportTab === 'neraca_posisi') pdf.exportNeracaPDF(db, month);
+      else pdf.exportLabaRugiPDF(db, month);
+    } catch {
+      setExportMsg('PDF gagal dibuat di perangkat ini. Coba lagi atau gunakan Ekspor CSV.');
+    } finally {
+      setPdfBusy(false);
+    }
   };
 
   const handleExportCSV = () => {
@@ -279,11 +289,12 @@ export function BukuView({ db }: BukuViewProps) {
 
           <button
             type="button"
-            onClick={handleExportPDF}
-            className="min-h-[40px] inline-flex items-center gap-1.5 rounded-lg bg-[#14532D] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#166534] whitespace-nowrap"
+            onClick={() => void handleExportPDF()}
+            disabled={pdfBusy}
+            className="min-h-[40px] inline-flex items-center gap-1.5 rounded-lg bg-[#14532D] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#166534] disabled:opacity-60 whitespace-nowrap"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Ekspor PDF</span>
+            <span>{pdfBusy ? 'Menyiapkan PDF...' : 'Ekspor PDF'}</span>
           </button>
         </div>
 
@@ -317,12 +328,19 @@ export function BukuView({ db }: BukuViewProps) {
             ))}
           </select>
         )}
+        {exportMsg && (
+          <p role="alert" className="w-full text-xs font-medium text-[#B91C1C]">
+            {exportMsg}
+          </p>
+        )}
       </div>
 
       {/* Ledger Sheet Container */}
       <div
-        className={`rounded-xl border border-[#D6D3CB] bg-white p-4 sm:p-8 shadow-sm ${
-          wideLandscape ? 'min-w-full overflow-x-auto' : ''
+        className={`rounded-xl border border-[#D6D3CB] bg-white shadow-sm ${
+          wideLandscape
+            ? 'p-2 sm:p-4 [&_table]:min-w-[820px]'
+            : 'p-4 sm:p-8'
         }`}
       >
         {/* Indonesian Accounting Report Header */}

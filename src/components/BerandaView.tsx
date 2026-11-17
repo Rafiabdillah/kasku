@@ -2,7 +2,7 @@ import { ArrowDownLeft, ArrowUpRight, BookOpen, PlusCircle, Scale, Wallet } from
 import type { Account, Journal, JournalLine, LedgerDatabase } from '../core/types';
 import { formatBulanTahun, formatRupiahTitle, formatTanggalID } from '../core/format';
 import { buildBudgetProgress, buildHomeSummary } from '../core/reports';
-import { ThreeBalanceScene } from './ThreeBalanceScene';
+import { LazyThreeBalanceScene } from './LazyThreeBalanceScene';
 
 interface BerandaViewProps {
   db: LedgerDatabase;
@@ -139,7 +139,7 @@ export function BerandaView({
         </div>
 
         <div className="lg:col-span-7 flex flex-col">
-          <ThreeBalanceScene
+          <LazyThreeBalanceScene
             metrics={{
               kasBalance,
               bankBalance,

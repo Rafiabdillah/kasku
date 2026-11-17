@@ -24,17 +24,19 @@ import type {
 import { currentLocalMonth, formatRupiahTitle } from '../core/format';
 import { generateId } from '../core/ledger';
 import {
+  createPinHash,
   exportJurnalUmumCSV,
   exportNeracaSaldoCSV,
-  hashPin,
   normalizeDatabase,
   triggerFileDownload,
+  verifyPin,
 } from '../services/storage';
 import {
   createBukuKuSpreadsheet,
   fetchSpreadsheetMetadata,
   getCachedSheetsToken,
   initGoogleSheetsAuth,
+  parseSpreadsheetId,
   parseSpreadsheetRowsToInputs,
   readSheetValues,
   signInWithGoogleForSheets,
@@ -140,6 +142,7 @@ export function PengaturanView({
   const [confirmOverwriteOpen, setConfirmOverwriteOpen] = useState<boolean>(false);
   const [confirmRestoreData, setConfirmRestoreData] = useState<LedgerDatabase | null>(null);
   const [confirmEmptyBookOpen, setConfirmEmptyBookOpen] = useState<boolean>(false);
+  const [confirmResetSeedOpen, setConfirmResetSeedOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const unsub = initGoogleSheetsAuth(
@@ -154,6 +157,27 @@ export function PengaturanView({
     );
     return () => unsub();
   }, []);
+
+  // Keep the profile and backup drafts in sync after restore/new-book actions.
+  useEffect(() => {
+    setOwnerName(db.settings.ownerName);
+  }, [db.settings.ownerName]);
+
+  useEffect(() => {
+    setBusinessName(db.settings.businessName);
+  }, [db.settings.businessName]);
+
+  useEffect(() => {
+    setSpreadsheetIdInput(db.settings.spreadsheetId || '');
+  }, [db.settings.spreadsheetId]);
+
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    for (const [k, v] of Object.entries(db.budgets ?? {})) {
+      next[k] = v > 0 ? String(v) : '';
+    }
+    setBudgetDrafts(next);
+  }, [db.budgets]);
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
@@ -207,8 +231,12 @@ export function PengaturanView({
         setErrorMsg('Masukkan PIN saat ini terlebih dahulu sebelum mengganti PIN.');
         return;
       }
-      const oldHashed = await hashPin(oldPinInput);
-      if (oldHashed !== db.settings.pinHash) {
+      const oldValid = await verifyPin(
+        oldPinInput,
+        db.settings.pinHash,
+        db.settings.pinSalt,
+      );
+      if (!oldValid) {
         setErrorMsg('PIN saat ini salah.');
         return;
       }
@@ -221,8 +249,8 @@ export function PengaturanView({
       setErrorMsg('Konfirmasi PIN tidak sama.');
       return;
     }
-    const hashed = await hashPin(pinInput);
-    onUpdateSettings({ pinEnabled: true, pinHash: hashed });
+    const { hash, salt } = await createPinHash(pinInput);
+    onUpdateSettings({ pinEnabled: true, pinHash: hash, pinSalt: salt });
     setOldPinInput('');
     setPinInput('');
     setPinConfirm('');
@@ -237,13 +265,17 @@ export function PengaturanView({
         setErrorMsg('Masukkan PIN saat ini terlebih dahulu untuk menonaktifkan kunci PIN.');
         return;
       }
-      const oldHashed = await hashPin(oldPinInput);
-      if (oldHashed !== db.settings.pinHash) {
+      const oldValid = await verifyPin(
+        oldPinInput,
+        db.settings.pinHash,
+        db.settings.pinSalt,
+      );
+      if (!oldValid) {
         setErrorMsg('PIN saat ini salah. Tidak dapat menonaktifkan kunci PIN.');
         return;
       }
     }
-    onUpdateSettings({ pinEnabled: false, pinHash: null });
+    onUpdateSettings({ pinEnabled: false, pinHash: null, pinSalt: null });
     setOldPinInput('');
     setPinInput('');
     setPinConfirm('');
@@ -309,6 +341,8 @@ export function PengaturanView({
       setSheetMeta(meta);
       setSpreadsheetIdInput(meta.spreadsheetId);
       setSelectedTabTitle(meta.sheets[0]?.title ?? '');
+      setPreviewRows([]);
+      setFullTabRows([]);
       onUpdateSettings({ spreadsheetId: meta.spreadsheetId });
       setStatusMsg(`Spreadsheet "${meta.title}" berhasil dibuat dan diisi laporan BukuKu.`);
     } catch (err) {
@@ -329,18 +363,27 @@ export function PengaturanView({
       return;
     }
     if (!spreadsheetIdInput.trim()) {
-      setErrorMsg('Masukkan Spreadsheet ID terlebih dahulu.');
+      setErrorMsg('Masukkan Spreadsheet ID atau tautan Google Sheets terlebih dahulu.');
+      return;
+    }
+    const spreadsheetId = parseSpreadsheetId(spreadsheetIdInput);
+    if (!spreadsheetId) {
+      setErrorMsg('Spreadsheet ID tidak valid.');
       return;
     }
     setIsSyncing(true);
     try {
       const meta = await syncToExistingSpreadsheet(
         token,
-        spreadsheetIdInput.trim(),
+        spreadsheetId,
         db,
         currentLocalMonth(),
       );
       setSheetMeta(meta);
+      setSpreadsheetIdInput(meta.spreadsheetId);
+      setSelectedTabTitle(meta.sheets[0]?.title ?? '');
+      setPreviewRows([]);
+      setFullTabRows([]);
       onUpdateSettings({ spreadsheetId: meta.spreadsheetId });
       setStatusMsg(`Spreadsheet "${meta.title}" berhasil disinkronkan.`);
     } catch (err) {
@@ -360,19 +403,28 @@ export function PengaturanView({
       return;
     }
     if (!spreadsheetIdInput.trim()) {
-      setErrorMsg('Masukkan Spreadsheet ID yang ingin dibaca.');
+      setErrorMsg('Masukkan Spreadsheet ID atau tautan Google Sheets yang ingin dibaca.');
+      return;
+    }
+    const spreadsheetId = parseSpreadsheetId(spreadsheetIdInput);
+    if (!spreadsheetId) {
+      setErrorMsg('Spreadsheet ID tidak valid.');
       return;
     }
     setIsSyncing(true);
     try {
-      const meta = await fetchSpreadsheetMetadata(token, spreadsheetIdInput.trim());
+      const meta = await fetchSpreadsheetMetadata(token, spreadsheetId);
       setSheetMeta(meta);
+      setSpreadsheetIdInput(meta.spreadsheetId);
       const firstTab = meta.sheets[0]?.title ?? '';
       setSelectedTabTitle(firstTab);
       if (firstTab) {
         const rows = await readSheetValues(token, meta.spreadsheetId, firstTab);
         setFullTabRows(rows);
         setPreviewRows(rows.slice(0, 12));
+      } else {
+        setFullTabRows([]);
+        setPreviewRows([]);
       }
       setStatusMsg(`Berhasil membaca metadata "${meta.title}" (${meta.sheets.length} tab).`);
     } catch (err) {
@@ -412,12 +464,25 @@ export function PengaturanView({
   const handleSaveBudgets = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+    setStatusMsg('');
     const next: Record<string, number> = {};
+    const invalid: string[] = [];
     for (const [accId, raw] of Object.entries(budgetDrafts)) {
-      const val = Number(raw);
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+      const val = Number(trimmed.replace(/\./g, ''));
       if (Number.isSafeInteger(val) && val > 0) {
         next[accId] = val;
+      } else {
+        const acc = db.accounts.find((a) => a.id === accId);
+        invalid.push(acc ? `${acc.code} ${acc.name}` : accId);
       }
+    }
+    if (invalid.length > 0) {
+      setErrorMsg(
+        `Nilai anggaran tidak valid untuk: ${invalid.join(', ')}. Isi angka rupiah tanpa desimal, atau kosongkan untuk menghapus target.`,
+      );
+      return;
     }
     onUpdateBudgets(next);
     setStatusMsg('Target anggaran bulanan berhasil disimpan.');
@@ -1041,15 +1106,19 @@ export function PengaturanView({
 
               <div>
                 <label htmlFor="sheets-id" className="block text-xs font-semibold text-[#57534E] mb-1.5">
-                  Atau Gunakan Spreadsheet ID yang Sudah Ada
+                  Atau Gunakan Spreadsheet ID / Tautan yang Sudah Ada
                 </label>
                 <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     id="sheets-id"
                     type="text"
-                    placeholder="Contoh: 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+                    placeholder="Tempel tautan https://docs.google.com/spreadsheets/d/... atau ID-nya"
                     value={spreadsheetIdInput}
-                    onChange={(e) => setSpreadsheetIdInput(e.target.value)}
+                    onChange={(e) => {
+                      setSpreadsheetIdInput(e.target.value);
+                      setPreviewRows([]);
+                      setFullTabRows([]);
+                    }}
                     className="flex-1 rounded-lg border border-[#D6D3CB] bg-[#F8F7F4] px-3 py-2 font-mono text-xs"
                   />
                   <button
@@ -1236,10 +1305,7 @@ export function PengaturanView({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    onResetSeed();
-                    setStatusMsg('Data contoh BukuKu berhasil dimuat ulang.');
-                  }}
+                  onClick={() => setConfirmResetSeedOpen(true)}
                   className="text-xs font-semibold text-[#57534E] hover:text-[#18181B]"
                 >
                   Reset ke Data Contoh
@@ -1413,7 +1479,7 @@ export function PengaturanView({
               Perbarui Isi Google Spreadsheet?
             </h3>
             <p className="text-sm text-[#57534E]">
-              BukuKu akan memperbarui tab <strong>Ringkasan</strong>, <strong>Jurnal Umum</strong>, <strong>Neraca Saldo</strong>, dan <strong>Laba Rugi</strong> pada spreadsheet <span className="font-mono text-xs">{spreadsheetIdInput}</span> dengan data pembukuan terbaru.
+              BukuKu akan memperbarui tab <strong>BukuKu · Ringkasan</strong>, <strong>BukuKu · Jurnal Umum</strong>, <strong>BukuKu · Neraca Saldo</strong>, dan <strong>BukuKu · Laba Rugi</strong> pada spreadsheet <span className="font-mono text-xs">{spreadsheetIdInput}</span> dengan data pembukuan terbaru.
             </p>
             <div className="flex justify-end gap-2 pt-2">
               <button
@@ -1447,7 +1513,7 @@ export function PengaturanView({
               Pulihkan Data dari Backup?
             </h3>
             <p className="text-sm text-[#57534E]">
-              Data pembukuan saat ini akan digantikan oleh file backup berisi {confirmRestoreData.journals.length} jurnal dan {confirmRestoreData.accounts.length} akun.
+              Data pembukuan saat ini akan digantikan oleh file backup berisi {confirmRestoreData.journals.length} jurnal dan {confirmRestoreData.accounts.length} akun. PIN dan ID Google Sheets yang tersimpan di perangkat ini tetap dipertahankan.
             </p>
             <div className="flex justify-end gap-2 pt-2">
               <button
@@ -1484,7 +1550,7 @@ export function PengaturanView({
               Mulai Buku Baru Kosong (Rp0)?
             </h3>
             <p className="text-sm text-[#57534E]">
-              Seluruh jurnal transaksi dan contoh saldo awal saat ini akan dikosongkan menjadi Rp0 sambil mempertahankan 20 Bagan Akun dan nama pemilik Anda. Pastikan sudah mengunduh backup jika data masih diperlukan.
+              Seluruh jurnal transaksi dan contoh saldo awal saat ini akan dikosongkan menjadi Rp0 sambil mempertahankan bagan akun, nama pemilik, pengaturan PIN, dan ID Google Sheets Anda. Pastikan sudah mengunduh backup jika data masih diperlukan.
             </p>
             <div className="flex justify-end gap-2 pt-2">
               <button
@@ -1504,6 +1570,44 @@ export function PengaturanView({
                 className="rounded-lg bg-[#B91C1C] px-4 py-2 text-xs font-semibold text-white hover:bg-[#991B1B]"
               >
                 Ya, Kosongkan Buku
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog: Reset to Demo Data */}
+      {confirmResetSeedOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-md rounded-xl border border-[#D6D3CB] bg-white p-6 space-y-4 shadow-xl">
+            <h3 className="font-serif text-lg font-bold text-[#18181B]">
+              Ganti Seluruh Data dengan Data Contoh?
+            </h3>
+            <p className="text-sm text-[#57534E]">
+              Semua jurnal, saldo, dan aturan berulang Anda saat ini akan <strong>dihapus</strong> dan diganti data contoh BukuKu. Nama pemilik, PIN, dan ID Google Sheets tetap dipertahankan. Unduh backup terlebih dahulu jika data ini masih diperlukan.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmResetSeedOpen(false)}
+                className="rounded-lg border border-[#D6D3CB] px-4 py-2 text-xs font-semibold text-[#18181B]"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onResetSeed();
+                  setConfirmResetSeedOpen(false);
+                  setStatusMsg('Data contoh BukuKu berhasil dimuat ulang.');
+                }}
+                className="rounded-lg bg-[#B91C1C] px-4 py-2 text-xs font-semibold text-white hover:bg-[#991B1B]"
+              >
+                Ya, Ganti dengan Data Contoh
               </button>
             </div>
           </div>

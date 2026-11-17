@@ -61,6 +61,7 @@ export interface AppSettings {
   businessName: string;
   pinEnabled: boolean;
   pinHash: string | null;
+  pinSalt?: string | null;
   spreadsheetId: string;
 }
 

@@ -1,33 +1,61 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Delete, Lock } from 'lucide-react';
-import { hashPin } from '../services/storage';
+import {
+  formatPinLockout,
+  pinLockoutRemainingMs,
+  registerPinFailure,
+  resetPinFailures,
+  verifyPin,
+} from '../services/storage';
 
 interface PinLockOverlayProps {
   expectedHash: string;
+  pinSalt?: string | null;
   onUnlock: () => void;
 }
 
-export function PinLockOverlay({ expectedHash, onUnlock }: PinLockOverlayProps) {
+export function PinLockOverlay({ expectedHash, pinSalt, onUnlock }: PinLockOverlayProps) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
+  const [lockoutMs, setLockoutMs] = useState(() => pinLockoutRemainingMs());
+
+  useEffect(() => {
+    if (lockoutMs <= 0) return;
+    const timer = window.setInterval(() => {
+      setLockoutMs(pinLockoutRemainingMs());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [lockoutMs]);
+
+  const registerFailure = useCallback(() => {
+    const result = registerPinFailure();
+    if (result.remainingMs > 0) {
+      setLockoutMs(result.remainingMs);
+      setError(`PIN salah. Coba lagi dalam ${formatPinLockout(result.remainingMs)}.`);
+    } else {
+      setError('PIN salah. Coba lagi.');
+    }
+    setPin('');
+  }, []);
 
   const handleDigit = useCallback(
     async (d: string) => {
+      if (lockoutMs > 0) return;
       setError('');
       if (pin.length >= 6) return;
       const next = pin + d;
       setPin(next);
       if (next.length >= 4) {
-        const h = await hashPin(next);
-        if (h === expectedHash) {
+        const valid = await verifyPin(next, expectedHash, pinSalt);
+        if (valid) {
+          resetPinFailures();
           onUnlock();
         } else if (next.length === 6) {
-          setError('PIN salah. Coba lagi.');
-          setPin('');
+          registerFailure();
         }
       }
     },
-    [pin, expectedHash, onUnlock],
+    [pin, expectedHash, pinSalt, onUnlock, lockoutMs, registerFailure],
   );
 
   const handleBackspace = useCallback(() => {
@@ -36,18 +64,19 @@ export function PinLockOverlay({ expectedHash, onUnlock }: PinLockOverlayProps) 
   }, []);
 
   const handleVerify = useCallback(async () => {
+    if (lockoutMs > 0) return;
     if (pin.length < 4) {
       setError('Masukkan minimal 4 digit PIN.');
       return;
     }
-    const h = await hashPin(pin);
-    if (h === expectedHash) {
+    const valid = await verifyPin(pin, expectedHash, pinSalt);
+    if (valid) {
+      resetPinFailures();
       onUnlock();
     } else {
-      setError('PIN tidak cocok.');
-      setPin('');
+      registerFailure();
     }
-  }, [pin, expectedHash, onUnlock]);
+  }, [pin, expectedHash, pinSalt, onUnlock, lockoutMs, registerFailure]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -69,6 +98,8 @@ export function PinLockOverlay({ expectedHash, onUnlock }: PinLockOverlayProps) 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [handleDigit, handleBackspace, handleVerify]);
+
+  const disabled = lockoutMs > 0;
 
   return (
     <div
@@ -114,8 +145,9 @@ export function PinLockOverlay({ expectedHash, onUnlock }: PinLockOverlayProps) 
             <button
               key={d}
               type="button"
+              disabled={disabled}
               onClick={() => void handleDigit(d)}
-              className="h-12 rounded-lg border border-[#E5E2DC] bg-[#F8F7F4] font-mono text-lg font-semibold hover:bg-[#EFECE5]"
+              className="h-12 rounded-lg border border-[#E5E2DC] bg-[#F8F7F4] font-mono text-lg font-semibold hover:bg-[#EFECE5] disabled:opacity-40"
             >
               {d}
             </button>
@@ -132,8 +164,9 @@ export function PinLockOverlay({ expectedHash, onUnlock }: PinLockOverlayProps) 
           </button>
           <button
             type="button"
+            disabled={disabled}
             onClick={() => void handleDigit('0')}
-            className="h-12 rounded-lg border border-[#E5E2DC] bg-[#F8F7F4] font-mono text-lg font-semibold hover:bg-[#EFECE5]"
+            className="h-12 rounded-lg border border-[#E5E2DC] bg-[#F8F7F4] font-mono text-lg font-semibold hover:bg-[#EFECE5] disabled:opacity-40"
           >
             0
           </button>
@@ -149,10 +182,11 @@ export function PinLockOverlay({ expectedHash, onUnlock }: PinLockOverlayProps) 
 
         <button
           type="button"
+          disabled={disabled}
           onClick={() => void handleVerify()}
-          className="w-full h-12 rounded-lg bg-[#14532D] text-xs font-semibold text-white hover:bg-[#166534]"
+          className="w-full h-12 rounded-lg bg-[#14532D] text-xs font-semibold text-white hover:bg-[#166534] disabled:opacity-40"
         >
-          Buka Kunci
+          {disabled ? `Terkunci ${formatPinLockout(lockoutMs)}` : 'Buka Kunci'}
         </button>
       </div>
     </div>

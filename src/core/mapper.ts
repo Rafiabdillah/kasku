@@ -1,12 +1,13 @@
 import type {
   Account,
+  AppSettings,
   Journal,
   JournalLine,
   LedgerDatabase,
   TransactionInput,
 } from './types';
 import { DEFAULT_ACCOUNTS, DEFAULT_SETTINGS } from './defaultAccounts';
-import { formatRupiahTitle, todayLocalDate } from './format';
+import { formatBulanTahun, formatRupiahTitle, todayLocalDate } from './format';
 import { DraftJournalLine, saveJournalAtomic, updateJournalAtomic } from './ledger';
 
 function findAccountOrThrow(
@@ -335,25 +336,73 @@ export function editFullTransaction(
 export function createEmptyDatabase(
   ownerName: string = DEFAULT_SETTINGS.ownerName,
   businessName: string = DEFAULT_SETTINGS.businessName,
+  overrides: Partial<AppSettings> = {},
 ): LedgerDatabase {
+  const settings: AppSettings = {
+    ...DEFAULT_SETTINGS,
+    ...overrides,
+    ownerName: ownerName.trim() || overrides.ownerName?.trim() || DEFAULT_SETTINGS.ownerName,
+    businessName:
+      businessName.trim() || overrides.businessName?.trim() || DEFAULT_SETTINGS.businessName,
+    pinEnabled: Boolean(overrides.pinEnabled && overrides.pinHash),
+    pinHash: overrides.pinHash ?? null,
+    pinSalt: overrides.pinSalt ?? null,
+    spreadsheetId: overrides.spreadsheetId ?? '',
+  };
   return {
     version: 1,
     accounts: DEFAULT_ACCOUNTS.map((a) => ({ ...a })),
     journals: [],
     journalLines: [],
-    settings: {
-      ...DEFAULT_SETTINGS,
-      ownerName: ownerName.trim() || DEFAULT_SETTINGS.ownerName,
-      businessName: businessName.trim() || DEFAULT_SETTINGS.businessName,
-    },
+    settings,
     budgets: {},
     recurringRules: [],
   };
 }
 
 /**
- * Automatically record monthly recurring transactions that have reached their `dayOfMonth`
- * in the current local month and have not yet been generated (`lastGeneratedMonth !== YYYY-MM`).
+ * Restore accounting data from a backup while keeping device-local security settings.
+ * A backup must never disable or replace the PIN configured on this device.
+ */
+export function mergeRestoredSettings(
+  restored: LedgerDatabase,
+  current: AppSettings,
+): LedgerDatabase {
+  return {
+    ...restored,
+    settings: {
+      ...restored.settings,
+      pinEnabled: Boolean(current.pinEnabled && current.pinHash),
+      pinHash: current.pinHash ?? null,
+      pinSalt: current.pinSalt ?? null,
+      spreadsheetId: current.spreadsheetId.trim() || restored.settings.spreadsheetId,
+    },
+  };
+}
+
+function monthIndex(month: string): number | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const monthNum = Number(match[2]);
+  if (monthNum < 1 || monthNum > 12) return null;
+  return year * 12 + (monthNum - 1);
+}
+
+function monthFromIndex(index: number): string {
+  const year = Math.floor(index / 12);
+  const monthNum = (index % 12) + 1;
+  return `${year}-${String(monthNum).padStart(2, '0')}`;
+}
+
+function daysInMonthFor(month: string): number {
+  const [yStr, mStr] = month.split('-');
+  return new Date(Number(yStr), Number(mStr), 0).getDate();
+}
+
+/**
+ * Automatically record monthly recurring transactions, including months that were missed
+ * while the app was closed. At most 24 months are backfilled per rule.
  */
 export function applyDueRecurringRules(
   db: LedgerDatabase,
@@ -367,7 +416,10 @@ export function applyDueRecurringRules(
   const year = now.getFullYear();
   const monthNum = now.getMonth() + 1;
   const currentMonth = `${year}-${String(monthNum).padStart(2, '0')}`;
-  const daysInMonth = new Date(year, monthNum, 0).getDate();
+  const currentIndex = monthIndex(currentMonth);
+  if (currentIndex === null) {
+    return { db, generatedCount: 0, generatedDescriptions: [] };
+  }
   const todayDay = now.getDate();
 
   let nextDb = db;
@@ -376,25 +428,41 @@ export function applyDueRecurringRules(
     if (!rule.isActive) return rule;
     if (rule.lastGeneratedMonth === currentMonth) return rule;
 
-    const effectiveDay = Math.min(Math.max(1, Math.trunc(rule.dayOfMonth)), daysInMonth);
-    if (todayDay < effectiveDay) return rule;
+    const lastIndex = rule.lastGeneratedMonth ? monthIndex(rule.lastGeneratedMonth) : null;
+    const firstIndex =
+      lastIndex === null ? currentIndex : Math.max(lastIndex + 1, currentIndex - 23);
+    if (firstIndex > currentIndex) return rule;
 
-    const scheduledDate = `${currentMonth}-${String(effectiveDay).padStart(2, '0')}`;
-    try {
-      const saved = recordTransaction(nextDb, {
-        actionType: rule.actionType,
-        amount: rule.amount,
-        walletId: rule.walletId,
-        categoryAccountId: rule.categoryAccountId,
-        date: scheduledDate,
-        description: `${rule.description} (Otomatis Bulanan)`,
-      });
-      nextDb = saved.db;
-      generatedDescriptions.push(rule.description);
-      return { ...rule, lastGeneratedMonth: currentMonth };
-    } catch {
-      return rule;
+    let lastProcessed = rule.lastGeneratedMonth;
+    let changed = false;
+
+    for (let index = firstIndex; index <= currentIndex; index++) {
+      const month = monthFromIndex(index);
+      const daysInMonth = daysInMonthFor(month);
+      const effectiveDay = Math.min(Math.max(1, Math.trunc(rule.dayOfMonth)), daysInMonth);
+      const isCurrentMonth = index === currentIndex;
+      if (isCurrentMonth && todayDay < effectiveDay) break;
+
+      const scheduledDate = `${month}-${String(effectiveDay).padStart(2, '0')}`;
+      try {
+        const saved = recordTransaction(nextDb, {
+          actionType: rule.actionType,
+          amount: rule.amount,
+          walletId: rule.walletId,
+          categoryAccountId: rule.categoryAccountId,
+          date: scheduledDate,
+          description: `${rule.description} (Otomatis ${formatBulanTahun(month)})`,
+        });
+        nextDb = saved.db;
+        generatedDescriptions.push(`${rule.description} (${formatBulanTahun(month)})`);
+        lastProcessed = month;
+        changed = true;
+      } catch {
+        break;
+      }
     }
+
+    return changed ? { ...rule, lastGeneratedMonth: lastProcessed } : rule;
   });
 
   if (generatedDescriptions.length === 0) {
