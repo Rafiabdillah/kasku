@@ -13,6 +13,7 @@ export function OfflineIndicator() {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
   } = useRegisterSW({
+    immediate: true,
     onRegisteredSW(_swUrl, reg) {
       setRegistration(reg ?? null);
     },
