@@ -797,8 +797,8 @@ export function PengaturanView({
                 .filter((a) => a.is_active && a.type === 'EXPENSE')
                 .sort((a, b) => a.code.localeCompare(b.code))
                 .map((acc) => (
-                  <div key={acc.id} className="py-2.5 flex items-center justify-between gap-4">
-                    <label htmlFor={`budget-${acc.id}`} className="text-xs font-medium text-[#18181B]">
+                  <div key={acc.id} className="py-2.5 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                    <label htmlFor={`budget-${acc.id}`} className="min-w-0 break-words text-xs font-medium text-[#18181B]">
                       <span className="font-mono text-[#57534E] mr-2">{acc.code}</span>
                       {acc.name}
                     </label>
@@ -812,7 +812,7 @@ export function PengaturanView({
                       onChange={(e) =>
                         setBudgetDrafts((prev) => ({ ...prev, [acc.id]: e.target.value }))
                       }
-                      className="w-40 rounded-lg border border-[#D6D3CB] bg-[#F8F7F4] px-3 py-1.5 text-right font-mono text-xs"
+                      className="min-h-[44px] min-w-0 w-full sm:w-40 sm:shrink-0 rounded-lg border border-[#D6D3CB] bg-[#F8F7F4] px-3 py-1.5 text-right font-mono text-xs"
                     />
                   </div>
                 ))}

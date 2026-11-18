@@ -1,7 +1,7 @@
 {
   "name": "bukuku",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "BukuKu — pencatat keuangan offline-first dengan jurnal debit-kredit otomatis, laporan akuntansi Indonesia, dan sinkronisasi Google Sheets.",
   "scripts": {
@@ -12,7 +12,9 @@
     "clean": "node -e \"const fs=require('fs');for(const p of ['dist','server.js'])fs.rmSync(p,{recursive:true,force:true})\"",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/core/accounting.test.ts src/core/hardening.test.ts",
+    "test": "tsx --test src/core/*.test.ts",
+    "test:browser": "node scripts/test-mobile.mjs",
+    "test:cloud": "node scripts/test-cloud.mjs",
     "verify": "npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
@@ -25,6 +27,7 @@
     "three": "^0.187.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",

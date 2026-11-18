@@ -156,6 +156,10 @@ export function normalizeDatabase(raw: Partial<LedgerDatabase>): LedgerDatabase 
     },
     budgets: raw.budgets && typeof raw.budgets === 'object' ? raw.budgets : {},
     recurringRules: Array.isArray(raw.recurringRules) ? raw.recurringRules : [],
+    cloudLink: raw.cloudLink && typeof raw.cloudLink.uid === 'string' &&
+      Number.isSafeInteger(raw.cloudLink.revision) && raw.cloudLink.revision >= 1 &&
+      /^[a-f0-9]{64}$/.test(raw.cloudLink.baselineHash) && typeof raw.cloudLink.lastSyncedAt === 'string'
+      ? raw.cloudLink : undefined,
   };
 }
 
@@ -186,7 +190,14 @@ export async function loadDatabase(): Promise<LoadDatabaseResult> {
   };
 }
 
-export async function saveDatabase(db: LedgerDatabase): Promise<SaveDatabaseResult> {
+let saveQueue: Promise<SaveDatabaseResult> = Promise.resolve({ ok: true, error: null });
+
+export function saveDatabase(db: LedgerDatabase): Promise<SaveDatabaseResult> {
+  saveQueue = saveQueue.then(() => writeDatabaseSnapshot(db));
+  return saveQueue;
+}
+
+async function writeDatabaseSnapshot(db: LedgerDatabase): Promise<SaveDatabaseResult> {
   const snapshot: StoredSnapshot = { savedAt: new Date().toISOString(), db };
   const errors: string[] = [];
   let localSaved = false;
@@ -203,12 +214,12 @@ export async function saveDatabase(db: LedgerDatabase): Promise<SaveDatabaseResu
   const idb = await openIdb();
   if (idb) {
     try {
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
         const tx = idb.transaction(STORE_NAME, 'readwrite');
         tx.objectStore(STORE_NAME).put(snapshot, SNAPSHOT_KEY);
         tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
-        tx.onabort = () => resolve();
+        tx.onerror = () => reject(tx.error ?? new Error('IndexedDB gagal menulis'));
+        tx.onabort = () => reject(tx.error ?? new Error('Penyimpanan dibatalkan'));
       });
       idbSaved = true;
     } catch (error) {
@@ -273,6 +284,37 @@ export function subscribeToDatabaseChanges(listener: (db: LedgerDatabase) => voi
     ch?.removeEventListener('message', reload);
     window.removeEventListener('storage', onStorage);
   };
+}
+
+export async function saveCloudRecovery(db: LedgerDatabase): Promise<void> {
+  const idb = await openIdb();
+  if (!idb) throw new Error('Tidak dapat membuat salinan pemulihan. Buku belum diganti.');
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = idb.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).put({ db, savedAt: new Date().toISOString() }, 'cloud-recovery');
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } finally { idb.close(); }
+}
+
+export async function downloadCloudRecovery(): Promise<void> {
+  const idb = await openIdb();
+  if (!idb) throw new Error('Penyimpanan pemulihan tidak tersedia.');
+  try {
+    const raw = await new Promise<unknown>((resolve, reject) => {
+      const tx = idb.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).get('cloud-recovery');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const snapshot = parseSnapshot(raw);
+    if (!snapshot) throw new Error('Belum ada salinan sebelum pergantian buku cloud.');
+    const { cloudLink: _link, ...backup } = snapshot.db;
+    triggerFileDownload('bukuku-pemulihan-cloud.json', JSON.stringify(backup, null, 2), 'application/json');
+  } finally { idb.close(); }
 }
 
 const PBKDF2_ITERATIONS = 150_000;

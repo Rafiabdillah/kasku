@@ -23,7 +23,9 @@ export function OfflineIndicator() {
     if (!registration) return;
 
     const checkForUpdate = () => {
-      if (document.visibilityState === 'visible') void registration.update();
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        void registration.update().catch(() => undefined);
+      }
     };
     const interval = window.setInterval(checkForUpdate, 60 * 60 * 1000);
     document.addEventListener('visibilitychange', checkForUpdate);

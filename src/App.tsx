@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { BookOpen, Home, PlusCircle, Receipt, Scale, Settings } from 'lucide-react';
+import { ArrowLeft, BookOpen, Cloud, Home, PlusCircle, Receipt, Settings } from 'lucide-react';
+import { useCloudSync } from './hooks/useCloudSync';
+import { CloudAccountPanel } from './components/CloudAccountPanel';
 import type {
   Account,
   LedgerDatabase,
@@ -42,11 +44,18 @@ const PengaturanView = lazy(() =>
   import('./components/PengaturanView').then((m) => ({ default: m.PengaturanView })),
 );
 
-type AppRoute = 'beranda' | 'catat' | 'transaksi' | 'buku' | 'hutang' | 'pengaturan';
+type AppRoute = 'beranda' | 'catat' | 'transaksi' | 'buku' | 'hutang' | 'pengaturan' | 'cloud';
+
+function routeFromHash(): AppRoute {
+  const route = window.location.hash.slice(1);
+  return ['beranda', 'catat', 'transaksi', 'buku', 'hutang', 'pengaturan', 'cloud'].includes(route)
+    ? route as AppRoute : 'beranda';
+}
 
 export default function App() {
   const [db, setDb] = useState<LedgerDatabase | null>(null);
-  const [route, setRoute] = useState<AppRoute>('beranda');
+  const [route, setRoute] = useState<AppRoute>(routeFromHash);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('akun');
   const [full3D, setFull3D] = useState<boolean>(false);
   const [locked, setLocked] = useState<boolean>(false);
@@ -58,6 +67,30 @@ export default function App() {
   const hiddenAtRef = useRef<number | null>(null);
 
   const currentMonth = currentLocalMonth();
+  const persistDb = (next: LedgerDatabase) => {
+    dbRef.current = next;
+    setDb(next);
+    void saveDatabase(next).then((result) => setStorageError(result.ok ? null : result.error));
+  };
+  const cloud = useCloudSync(db, !!db && !locked && !storageError, () => dbRef.current, (next) => {
+    persistDb(next);
+    if (next.cloudLink) setNeedsOnboarding(false);
+  });
+
+  useEffect(() => {
+    const pop = () => { setRoute(routeFromHash()); setFull3D(false); window.scrollTo(0, 0); };
+    window.addEventListener('popstate', pop);
+    const viewport = window.visualViewport;
+    const resize = () => {
+      const input = document.activeElement;
+      const open = !!viewport && window.innerHeight - viewport.height > 120 &&
+        input instanceof HTMLElement && input.matches('input, textarea, select');
+      setKeyboardOpen(open);
+      if (open) requestAnimationFrame(() => input.scrollIntoView({ block: 'center' }));
+    };
+    viewport?.addEventListener('resize', resize);
+    return () => { window.removeEventListener('popstate', pop); viewport?.removeEventListener('resize', resize); };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -125,10 +158,7 @@ export default function App() {
   }, []);
 
   const commitDb = (nextDb: LedgerDatabase) => {
-    setDb(nextDb);
-    void saveDatabase(nextDb).then((result) => {
-      setStorageError(result.ok ? null : result.error);
-    });
+    persistDb({ ...nextDb, cloudLink: dbRef.current?.cloudLink });
   };
 
   const completeOnboarding = (
@@ -286,6 +316,9 @@ export default function App() {
         <FirstRunOnboarding
           onComplete={completeOnboarding}
         />
+        <div className="max-w-lg mx-auto px-4 pb-10">
+          <CloudAccountPanel sync={cloud} db={db} allowUpload={false} />
+        </div>
       </>
     );
   }
@@ -314,6 +347,7 @@ export default function App() {
     { id: 'buku', label: 'Buku' },
     { id: 'hutang', label: 'Hutang' },
     { id: 'pengaturan', label: 'Pengaturan' },
+    { id: 'cloud', label: 'Akun' },
   ];
 
   const navigate = (next: AppRoute, subTab?: SettingsTab) => {
@@ -323,22 +357,26 @@ export default function App() {
     } else if (next === 'pengaturan' && route !== 'pengaturan') {
       setSettingsTab('akun');
     }
+    if (next !== route) window.history.pushState(null, '', `#${next}`);
     setRoute(next);
+    window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F8F7F4] text-[#18181B]">
       {/* Strict 3-Zone Top Navigation Bar */}
-      <header className="no-print sticky top-0 z-30 border-b border-[#E5E2DC] bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 md:h-16 flex items-center justify-between gap-4 md:gap-8">
-          {/* Zone 1: Single-line brand wordmark */}
-          <button
-            type="button"
-            onClick={() => navigate('beranda')}
-            className="font-serif text-xl font-bold tracking-tight text-[#14532D] whitespace-nowrap shrink-0 min-h-[40px] flex items-center"
-          >
-            BukuKu
-          </button>
+      <header className="no-print sticky top-0 z-30 border-b border-[#E5E2DC]/70 bg-[#F8F7F4]/95 backdrop-blur-xl pt-[env(safe-area-inset-top)]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3 md:gap-6">
+          <div className="flex min-w-0 items-center gap-2">
+            {route !== 'beranda' && <button type="button" aria-label="Kembali ke beranda" className="md:hidden min-h-11 min-w-11 rounded-full bg-white flex items-center justify-center" onClick={() => navigate('beranda')}><ArrowLeft className="h-5 w-5" /></button>}
+            <button
+              type="button"
+              onClick={() => navigate('beranda')}
+              className="font-serif text-xl font-bold tracking-tight text-[#14532D] whitespace-nowrap shrink-0 min-h-11 flex items-center"
+            >
+              BukuKu
+            </button>
+          </div>
 
           {/* Zone 2: 5 concise single-line nav links */}
           <nav className="hidden md:flex items-center gap-6" aria-label="Navigasi utama">
@@ -362,11 +400,13 @@ export default function App() {
           </nav>
 
           {/* Zone 3: 1 primary CTA */}
-          <div className="flex items-center shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            <button type="button" aria-label="Buka pengaturan" onClick={() => navigate('pengaturan')} className="md:hidden min-h-11 min-w-11 flex items-center justify-center rounded-full bg-white text-[#14532D]"><Settings className="h-5 w-5" /></button>
+            <button type="button" aria-label="Akun dan status sinkronisasi" onClick={() => navigate('cloud')} className="md:hidden min-h-11 min-w-11 flex items-center justify-center rounded-full bg-[#EAF3EC] text-[#14532D]"><Cloud className="h-5 w-5" /><span className="sr-only">{cloud.status}</span></button>
             <button
               type="button"
               onClick={() => navigate('catat')}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#14532D] px-4 py-2 min-h-[40px] text-xs font-semibold text-white hover:bg-[#166534] whitespace-nowrap shrink-0"
+              className="hidden md:inline-flex items-center gap-1.5 rounded-lg bg-[#14532D] px-4 py-2 min-h-11 text-xs font-semibold text-white hover:bg-[#166534] whitespace-nowrap shrink-0"
             >
               <PlusCircle className="w-3.5 h-3.5" />
               <span>Catat</span>
@@ -376,6 +416,15 @@ export default function App() {
       </header>
 
       <OfflineIndicator />
+
+      {db.cloudLink && (cloud.status === 'conflict' || cloud.status === 'error') && route !== 'cloud' && (
+        <div role="status" className="no-print border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2">
+            <span>{cloud.status === 'conflict' ? 'Ada dua versi buku. Pilih versi sebelum sinkronisasi dilanjutkan.' : 'Sinkronisasi tertunda. Catatan tetap tersimpan di perangkat.'}</span>
+            <button type="button" className="min-h-11 font-semibold underline" onClick={() => navigate('cloud')}>Periksa akun</button>
+          </div>
+        </div>
+      )}
 
       {storageError && (
         <div
@@ -446,7 +495,11 @@ export default function App() {
           />
         </main>
       ) : (
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 pb-28 md:pb-10">
+        <main className={`flex-1 min-w-0 max-w-7xl w-full mx-auto px-4 sm:px-6 py-4 sm:py-8 ${route === 'catat' ? 'pb-6' : 'pb-28'} md:pb-10`}>
+          {route === 'cloud' && <div className="max-w-xl mx-auto space-y-4">
+            <CloudAccountPanel sync={cloud} db={db} />
+            <button type="button" className="w-full min-h-12 rounded-xl border border-[#D6D3CB] bg-white text-sm font-semibold" onClick={() => navigate('pengaturan')}>Pengaturan, PIN & backup</button>
+          </div>}
           {route === 'beranda' && (
             <BerandaView
               db={db}
@@ -512,17 +565,16 @@ export default function App() {
         </main>
       )}
 
-      {/* Mobile Bottom Navigation (<= 15% mobile height, >=44px touch targets) */}
-      <nav
-        className="no-print md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-[#E5E2DC] bg-white grid grid-cols-5 h-[calc(3.5rem+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)]"
+      {route !== 'catat' && !keyboardOpen && <nav
+        className="no-print md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-[#E5E2DC] bg-white/95 backdrop-blur-xl grid grid-cols-5 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_#18181b08]"
         aria-label="Navigasi seluler"
       >
         {[
           { id: 'beranda', label: 'Beranda', Icon: Home },
-          { id: 'transaksi', label: 'Transaksi', Icon: Receipt },
-          { id: 'buku', label: 'Buku', Icon: BookOpen },
-          { id: 'hutang', label: 'Hutang', Icon: Scale },
-          { id: 'pengaturan', label: 'Atur', Icon: Settings },
+          { id: 'transaksi', label: 'Riwayat', Icon: Receipt },
+          { id: 'catat', label: 'Catat', Icon: PlusCircle },
+          { id: 'buku', label: 'Laporan', Icon: BookOpen },
+          { id: 'cloud', label: 'Akun', Icon: Cloud },
         ].map(({ id, label, Icon }) => {
           const active = route === id && !full3D;
           return (
@@ -531,16 +583,16 @@ export default function App() {
               type="button"
               onClick={() => navigate(id as AppRoute)}
               aria-current={active ? 'page' : undefined}
-              className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium ${
-                active ? 'text-[#14532D] font-semibold' : 'text-[#57534E]'
+              className={`min-h-14 flex flex-col items-center justify-center gap-1 rounded-2xl text-[11px] font-medium ${
+                id === 'catat' ? 'bg-[#14532D] text-white mx-1 shadow-sm' : active ? 'bg-[#EAF3EC] text-[#14532D] font-semibold' : 'text-[#57534E]'
               }`}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className="w-[22px] h-[22px]" strokeWidth={active ? 2.4 : 1.8} />
               <span>{label}</span>
             </button>
           );
         })}
-      </nav>
+      </nav>}
     </div>
   );
 }
@@ -563,13 +615,13 @@ function FirstRunOnboarding({ onComplete }: FirstRunOnboardingProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F7F4] text-[#18181B] flex items-center justify-center p-4">
+    <div className="bg-[#F8F7F4] text-[#18181B] flex items-center justify-center px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-6">
       <div className="w-full max-w-lg rounded-2xl border border-[#E5E2DC] bg-white p-6 sm:p-8 space-y-5 shadow-sm">
         <div className="space-y-1">
           <p className="font-serif text-2xl font-bold text-[#14532D]">Selamat datang di BukuKu</p>
           <p className="text-sm text-[#57534E]">
-            Pembukuan double-entry yang otomatis menyusun jurnal Debit/Kredit untuk Anda. Semua
-            data disimpan lokal di perangkat ini.
+            Pembukuan double-entry yang otomatis menyusun jurnal Debit/Kredit untuk Anda.
+            Data disimpan di perangkat; sinkronisasi akun bersifat opsional.
           </p>
         </div>
 

@@ -4,7 +4,7 @@ Aplikasi pembukuan pribadi dan usaha kecil bergaya buku akuntansi Indonesia. Sem
 
 **Aplikasi siap pakai:** <https://rafiabdillah.github.io/kasku/>
 
-**Offline-first:** data tersimpan di perangkat (IndexedDB + localStorage) dan aplikasi dapat dipasang sebagai PWA. Tidak ada server BukuKu dan tidak ada data yang dikirim ke mana pun kecuali Anda memilih sinkronisasi Google Sheets.
+**Offline-first:** data tersimpan di perangkat (IndexedDB + localStorage) dan aplikasi dapat dipasang sebagai PWA. Akun Firebase dan sinkronisasi buku antar-perangkat bersifat opsional. Data keuangan baru dikirim setelah Anda menyetujui menghubungkan buku; integrasi Google Sheets tetap terpisah.
 
 ## Pasang di perangkat
 
@@ -16,7 +16,19 @@ Aplikasi ini tidak perlu diunduh dari toko aplikasi. Buka tautan di atas, lalu p
 | Desktop (Chrome/Edge) | Buka tautan → ikon **Instal** di bilah alamat, atau menu → **Aplikasi → Instal situs ini** |
 | iPhone/iPad (Safari) | Buka tautan → tombol **Bagikan** → **Tambah ke Layar Utama** |
 
-Setelah terpasang, BukuKu terbuka layar penuh tanpa bilah browser dan tetap berjalan tanpa internet. Data tetap berada di perangkat yang sama; gunakan **Pengaturan → CSV, Backup & PWA → Unduh Backup (.json)** secara berkala.
+Setelah terpasang, BukuKu terbuka tanpa bilah browser dan tetap berjalan tanpa internet. Tanpa menghubungkan akun, data hanya berada di perangkat yang sama; gunakan **Pengaturan → CSV, Backup & PWA → Unduh Backup (.json)** secara berkala.
+
+## Akun dan sinkronisasi HP–laptop
+
+1. Buka **Akun**, daftar dengan email dan kata sandi minimal 12 karakter, lalu buka tautan verifikasi email. Kembali ke aplikasi dan pilih **Saya sudah verifikasi**.
+2. Di perangkat berisi buku utama, pilih **Hubungkan buku ke akun ini**, lalu setujui unggah buku. Login saja tidak mengunggah data.
+3. Di perangkat lain, masuk dengan akun yang sama dan pilih **Gunakan buku dari akun**. Buku lokal perangkat tersebut disalin ke pemulihan sebelum diganti.
+4. Setelah terhubung, perubahan disinkronkan otomatis saat online. Saat offline, Anda tetap dapat mencatat dan perubahan menunggu koneksi.
+5. Jika dua perangkat mengubah buku sejak sinkron terakhir, aplikasi meminta memilih versi akun atau perangkat. Tidak ada penggabungan atau penimpaan otomatis; unduh salinan pemulihan dari halaman Akun bila diperlukan.
+
+Nama buku/pemilik, akun akuntansi, jurnal, anggaran, dan transaksi berulang ikut tersinkron. PIN, salt PIN, dan tautan Google Sheets tetap lokal. Keluar akun **tidak menghapus salinan perangkat**; gunakan PIN dan kunci layar pada perangkat bersama. Putuskan tautan untuk kembali mencatat lokal.
+
+Cloud memakai Firebase Auth + Firestore dengan akses hanya untuk UID pemilik dan email terverifikasi. Batas snapshot **850 KB**, bukan penyimpanan tak terbatas; buku lebih besar tetap dapat dipakai lokal dan di-backup JSON. Cloud bukan enkripsi end-to-end dan kuota gratis dapat menghentikan sinkronisasi sementara. Backup tetap diperlukan. Satu salinan pemulihan terakhir disimpan di IndexedDB, bukan seluruh riwayat versi.
 
 ## Update aplikasi
 
@@ -28,6 +40,8 @@ Setelah terpasang, BukuKu terbuka layar penuh tanpa bilah browser dan tetap berj
 ## Fitur
 
 - Catat uang masuk, keluar, pindah dompet, saldo awal, utang, dan piutang.
+- Navigasi bawah mobile, kartu dompet geser, dan pencatatan dua langkah; 3D di HP dimuat hanya saat dibuka.
+- Login email, verifikasi, pemulihan kata sandi, dan sinkronisasi buku antar-perangkat dengan deteksi konflik.
 - Jurnal umum otomatis dengan validasi debit = kredit dan nomor jurnal berurutan.
 - Pembatalan transaksi lewat jurnal pembalik (audit trail tetap utuh, tidak ada penghapusan).
 - Laporan: Jurnal Umum, Buku Besar, Buku Kas, Neraca Saldo, Neraca, Laba Rugi.
@@ -58,7 +72,18 @@ npm run preview     # menjalankan hasil build
 npm run verify      # typecheck + test + build
 ```
 
-Tidak ada environment variable yang wajib. Konfigurasi Firebase untuk Google Sheets berada di `firebase-applet-config.json`.
+Tidak ada environment variable yang wajib. Konfigurasi Firebase publik untuk akun buku ada di `cloud-firebase-config.json`; proyek khusus `bukuku-rafiabdillah` memakai Firestore `(default)` di `asia-southeast2`, tanpa billing. Konfigurasi Google Sheets terpisah di `firebase-applet-config.json`. API key Firebase web bukan kredensial admin; otorisasi data ditentukan oleh `firestore.rules`.
+
+Untuk proyek pengganti, aktifkan email/password Firebase Auth, tambahkan domain aplikasi dan `localhost`, buat database Firestore, sesuaikan konfigurasi publik, lalu deploy aturan dengan `firebase deploy --only firestore:rules --project ID_PROYEK`. Jangan gunakan aturan akses publik.
+
+Pengujian browser (jalankan dev server terlebih dahulu):
+
+```bash
+node node_modules/playwright/cli.js install chromium
+node scripts/test-mobile.mjs
+```
+
+`TEST_BASE_URL` dapat diarahkan ke server hasil build, termasuk subpath `/kasku/`. Tes cloud nyata tersedia di `scripts/test-cloud.mjs` dengan `BUKUKU_CLOUD_FIXTURE` menunjuk JSON sementara berisi `projectId` dan `accounts` (`primary`, `other`, `unverified`); masing-masing akun berisi `uid`, `email`, `password`. Gunakan hanya akun uji sintetis (dua terverifikasi, satu belum), jangan akun pengguna; simpan fixture di luar repository dan bersihkan akun/dokumen uji setelah tes.
 
 > **Catatan Windows:** hindari nama folder yang mengandung karakter `&` (mis. `uang & buku`). `npm run` pada Windows memakai `cmd.exe` dan karakter tersebut memutus path `node_modules\.bin`. Jika sudah terlanjur, ganti nama folder atau jalankan binary langsung (`node node_modules/vite/bin/vite.js`).
 

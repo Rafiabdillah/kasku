@@ -77,7 +77,15 @@ export interface RecurringRule {
   lastGeneratedMonth: string | null; // YYYY-MM
 }
 
+export interface CloudLink {
+  uid: string;
+  revision: number;
+  baselineHash: string;
+  lastSyncedAt: string;
+}
+
 export interface LedgerDatabase {
+  cloudLink?: CloudLink;
   version: number;
   accounts: Account[];
   journals: Journal[];

@@ -22,7 +22,7 @@ export { REPORT_TABS, parseSpreadsheetId } from '../core/sheetsUtils';
 
 export const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
 
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+const app = getApps().some((item) => item.name === '[DEFAULT]') ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 const provider = new GoogleAuthProvider();

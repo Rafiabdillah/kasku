@@ -303,7 +303,7 @@ export function BukuView({ db }: BukuViewProps) {
             aria-label="Pilih akun buku besar"
             value={selectedAccountId}
             onChange={(e) => setSelectedAccountId(e.target.value)}
-            className="min-h-[40px] ml-auto rounded-lg border border-[#D6D3CB] bg-white px-3 py-2 text-xs font-semibold text-[#18181B]"
+            className="min-h-[44px] min-w-0 max-w-full w-full sm:w-auto sm:ml-auto rounded-lg border border-[#D6D3CB] bg-white px-3 py-2 text-xs font-semibold text-[#18181B]"
           >
             {sortedAccounts.map((acc) => (
               <option key={acc.id} value={acc.id}>
@@ -318,7 +318,7 @@ export function BukuView({ db }: BukuViewProps) {
             aria-label="Pilih dompet buku kas"
             value={selectedWalletId}
             onChange={(e) => setSelectedWalletId(e.target.value)}
-            className="min-h-[40px] ml-auto rounded-lg border border-[#D6D3CB] bg-white px-3 py-2 text-xs font-semibold text-[#18181B]"
+            className="min-h-[44px] min-w-0 max-w-full w-full sm:w-auto sm:ml-auto rounded-lg border border-[#D6D3CB] bg-white px-3 py-2 text-xs font-semibold text-[#18181B]"
           >
             <option value="all">Semua Dompet (Kas + Bank + E-Wallet)</option>
             {walletAccounts.map((w) => (
