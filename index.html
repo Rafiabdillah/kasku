@@ -756,6 +756,56 @@
         margin: 0 auto;
       }
     }
+      .quick-bar {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: rgba(15, 23, 42, 0.58);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 10px 12px;
+    }
+    .reaction-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+    }
+    .react-btn {
+      flex: 1;
+      padding: 6px 0;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(30, 41, 59, 0.85);
+      font-size: 1.05rem;
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    .react-btn:hover { transform: scale(1.1); background: rgba(236, 72, 153, 0.25); }
+    .chat-input-row { display: flex; gap: 6px; }
+    .chat-input-row input {
+      flex: 1;
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      padding: 7px 10px;
+      color: #fff;
+      font-size: 0.8rem;
+      outline: none;
+    }
+    .floating-emoji {
+      position: fixed;
+      bottom: 24%;
+      left: 50%;
+      font-size: 2.6rem;
+      pointer-events: none;
+      z-index: 99;
+      animation: floatUp 1.6s ease-out forwards;
+    }
+    @keyframes floatUp {
+      0% { opacity: 0; transform: translate(-50%, 10px) scale(0.6); }
+      20% { opacity: 1; transform: translate(-50%, -10px) scale(1.15); }
+      100% { opacity: 0; transform: translate(-50%, -130px) scale(1); }
+    }
   </style>
 </head>
 <body>
@@ -865,6 +915,20 @@
           <button type="button" id="rollBtn" class="roll-btn" onclick="handleRoll()">🎲 Kocok Dadu</button>
         </div>
 
+                <div id="quickChatBox" class="quick-bar" style="display:none;">
+          <div class="reaction-row">
+            <button type="button" class="react-btn" onclick="sendQuickReact('❤️')">❤️</button>
+            <button type="button" class="react-btn" onclick="sendQuickReact('😘')">😘</button>
+            <button type="button" class="react-btn" onclick="sendQuickReact('😂')">😂</button>
+            <button type="button" class="react-btn" onclick="sendQuickReact('😭')">😭</button>
+            <button type="button" class="react-btn" onclick="sendQuickReact('🔥')">🔥</button>
+          </div>
+          <div class="chat-input-row">
+            <input id="quickChatInput" type="text" maxlength="80" placeholder="Kirim pesan singkat ke pasangan..." onkeydown="if(event.key==='Enter') sendQuickChat()" />
+            <button type="button" class="icon-btn active-audio" onclick="sendQuickChat()">Kirim</button>
+          </div>
+        </div>
+
         <div>
           <div style="font-size:0.78rem; font-weight:700; color:#94a3b8; margin-bottom:6px;">RIWAYAT LANGKAH</div>
           <div id="logFeed" class="log-feed"></div>
@@ -971,14 +1035,28 @@
     let currentPlayerIdx = 0;
     let gameEnded = false;
 
-    // PeerJS Zero-Config Online State
+    // PeerJS Enhanced Online State (STUN + Heartbeat + Auto-Reconnect + State Sync)
     let peerInstance = null;
     let peerConn = null;
+    let heartbeatTimer = null;
+    let reconnectTimer = null;
     let roomCode = '';
     let mySeat = 0;
     let hostProfile = { name: 'Host', icon: '\u265A', color: TOKEN_COLORS[0], avatarUrl: '' };
     let guestProfile = { name: '', icon: '\u265B', color: TOKEN_COLORS[1], avatarUrl: '' };
     let guestReady = false;
+
+    const PEER_CONFIG = {
+      debug: 0,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:global.stun.twilio.com:3478' }
+        ]
+      }
+    };
 
     let players = [
       { name: 'Player 1', pos: 1, icon: '\u265A', color: TOKEN_COLORS[0], avatarUrl: '' },
@@ -994,337 +1072,152 @@
 
     function sendNetEvent(event, payload = {}) {
       if (playType === 'online' && peerConn && peerConn.open) {
-        peerConn.send({ event, payload });
+        try {
+          peerConn.send({ event, payload });
+        } catch (e) {}
       }
     }
 
-    function handleNetMessage(data) {
-      if (!data || !data.event) return;
-      const { event, payload } = data;
-
-      if (event === 'player_joined' && mySeat === 0) {
-        guestProfile = payload.guestProfile;
-        guestReady = true;
-        updateLobbyUI();
-        sendNetEvent('room_sync', {
-          hostProfile,
-          guestProfile,
-          gameMode,
-          enableCards: document.getElementById('optCards').checked,
-          enableLoveTiles: document.getElementById('optLoveTiles').checked
-        });
-      } else if (event === 'room_sync' && mySeat === 1) {
-        hostProfile = payload.hostProfile;
-        guestProfile = payload.guestProfile;
-        guestReady = true;
-        selectMode(payload.gameMode);
-        document.getElementById('optCards').checked = payload.enableCards;
-        document.getElementById('optLoveTiles').checked = payload.enableLoveTiles;
-        updateLobbyUI();
-      } else if (event === 'game_started') {
-        gameMode = payload.gameMode;
-        enableCards = payload.enableCards;
-        enableLoveTiles = payload.enableLoveTiles;
-        launchBoard(payload.p1, payload.p2);
-      } else if (event === 'dice_rolled') {
-        executeTurnSequence(payload.roll, payload.ladderPromptIdx, payload.snakePromptIdx);
-      } else if (event === 'modal_closed') {
-        closeModal(true);
-      } else if (event === 'rematch') {
-        launchBoard(
-          { name: players[0].name, icon: players[0].icon, color: players[0].color, avatarUrl: players[0].avatarUrl },
-          { name: players[1].name, icon: players[1].icon, color: players[1].color, avatarUrl: players[1].avatarUrl }
-        );
-      }
+    function startHeartbeat() {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = setInterval(() => {
+        if (peerConn && peerConn.open) {
+          sendNetEvent('ping', { ts: Date.now() });
+        }
+      }, 4000);
     }
 
-    function renderCharacterBuilders() {
-      renderSingleBuilder('builder-0', 0, 'Nama Pemain 1');
-      renderSingleBuilder('builder-1', 1, 'Nama Pemain 2');
-      renderSingleBuilder('builder-online', 'online', 'Nama Panggilan Kamu (misal: Dzaki / Atika)');
+    function spawnFloatingEmoji(emoji) {
+      const el = document.createElement('div');
+      el.className = 'floating-emoji';
+      el.textContent = emoji;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 1650);
     }
 
-    function renderSingleBuilder(containerId, key, placeholderText) {
-      const el = document.getElementById(containerId);
-      if (!el) return;
-      const cfg = charConfigs[key];
-
-      const presetsHtml = PRESET_CHARACTERS.map(p => {
-        const isSel = !cfg.avatarUrl && cfg.icon === p.icon;
-        return `<button type="button" class="preset-btn ${isSel ? 'selected' : ''}" title="${p.label}" onclick="setCharIcon('${key}', '${p.icon}')">${p.icon}</button>`;
-      }).join('');
-
-      const swatchesHtml = TOKEN_COLORS.map(c => {
-        const isSel = cfg.color === c;
-        return `<button type="button" class="swatch-btn ${isSel ? 'selected' : ''}" style="background:${c};" onclick="setCharColor('${key}', '${c}')"></button>`;
-      }).join('');
-
-      const clearBtnHtml = cfg.avatarUrl
-        ? `<button type="button" class="clear-photo-btn" title="Hapus Foto" onclick="clearCharPhoto('${key}')">×</button>`
-        : '';
-
-      el.innerHTML = `
-        <div class="char-top-row">
-          <div class="avatar-dot" id="preview-${key}" style="background:${cfg.color};">${renderAvatarInner(cfg)}</div>
-          <input type="text" value="${cfg.name}" placeholder="${placeholderText}" maxlength="18" oninput="setCharName('${key}', this.value)" />
-        </div>
-        <div class="char-picker-row">
-          <div class="preset-icons">
-            ${presetsHtml}
-            <input type="text" class="custom-char-input" maxlength="2" placeholder="Kustom" title="Ketik 1-2 huruf/emoji karakter sendiri" oninput="setCustomCharIcon('${key}', this.value)" />
-            <label class="upload-photo-btn" title="Upload foto dari galeri HP/Laptop">
-              📷 Foto
-              <input type="file" accept="image/*" style="display:none;" onchange="handlePhotoUpload('${key}', this)" />
-            </label>
-            ${clearBtnHtml}
-          </div>
-          <div class="color-swatches">${swatchesHtml}</div>
-        </div>
-      `;
+    function sendQuickReact(emoji) {
+      spawnFloatingEmoji(emoji);
+      playTone(660, 'sine', 0.08);
+      sendNetEvent('quick_react', { emoji, sender: players[mySeat]?.name || 'Pasangan' });
     }
 
-        function setCharName(key, val) { charConfigs[key].name = val; }
-
-    function setCharColor(key, color) {
-      charConfigs[key].color = color;
-      renderCharacterBuilders();
+    function sendQuickChat() {
+      const inp = document.getElementById('quickChatInput');
+      if (!inp) return;
+      const text = inp.value.trim();
+      if (!text) return;
+      inp.value = '';
+      const sender = players[mySeat]?.name || 'Kamu';
+      addLog(`💬 <strong>${sender}:</strong> ${text.replace(/</g, '<')}`);
+      sendNetEvent('quick_chat', { sender, text });
     }
 
-    function setCharIcon(key, icon) {
-      charConfigs[key].avatarUrl = '';
-      charConfigs[key].icon = icon;
-      renderCharacterBuilders();
-    }
+    function setupConnectionHandlers(conn) {
+      peerConn = conn;
+      startHeartbeat();
 
-    function setCustomCharIcon(key, val) {
-      const trimmed = val.trim();
-      if (!trimmed) return;
-      charConfigs[key].avatarUrl = '';
-      charConfigs[key].icon = trimmed;
-      const preview = document.getElementById(`preview-${key}`);
-      if (preview) preview.textContent = trimmed;
-      const container = document.getElementById(`builder-${key}`);
-      if (container) {
-        container.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('selected'));
-      }
-    }
+      conn.on('data', (data) => {
+        if (!data || !data.event) return;
+        const { event, payload } = data;
 
-    function clearCharPhoto(key) {
-      charConfigs[key].avatarUrl = '';
-      renderCharacterBuilders();
-    }
+        if (event === 'ping') {
+          sendNetEvent('pong', {});
+          return;
+        }
+        if (event === 'pong') return;
 
-    function handlePhotoUpload(key, inputEl) {
-      const file = inputEl.files && inputEl.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        const img = new Image();
-        img.onload = function() {
-          const size = 96;
-          const canvas = document.createElement('canvas');
-          canvas.width = size;
-          canvas.height = size;
-          const ctx = canvas.getContext('2d');
-
-          const minSide = Math.min(img.width, img.height);
-          const sx = (img.width - minSide) / 2;
-          const sy = (img.height - minSide) / 2;
-          ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
-
-          charConfigs[key].avatarUrl = canvas.toDataURL('image/jpeg', 0.75);
-          renderCharacterBuilders();
-        };
-        img.src = e.target.result;
-      };
-      reader.readAsDataURL(file);
-    }
-
-    // ==========================================
-    // WEB AUDIO ENGINE (SFX + AMBIENT BGM LOOP)
-    // ==========================================
-    const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
-    const audioCtx = AudioCtxClass ? new AudioCtxClass() : null;
-    let bgmTimer = null;
-    let bgmStep = 0;
-
-    const ROMANTIC_CHORDS = [
-      [174.61, 220.00, 261.63, 329.63],
-      [164.81, 196.00, 246.94, 293.66],
-      [146.83, 174.61, 220.00, 261.63],
-      [130.81, 164.81, 196.00, 246.94]
-    ];
-    const ROMANTIC_MELODY = [
-      523.25, 0, 493.88, 440.00, 392.00, 0, 329.63, 392.00,
-      440.00, 0, 392.00, 329.63, 293.66, 0, 329.63, 261.63
-    ];
-
-    const CLASSIC_CHORDS = [
-      [261.63, 329.63, 392.00],
-      [196.00, 246.94, 293.66],
-      [220.00, 261.63, 329.63],
-      [174.61, 220.00, 261.63]
-    ];
-    const CLASSIC_MELODY = [
-      523.25, 659.25, 783.99, 659.25, 587.33, 698.46, 880.00, 698.46,
-      659.25, 783.99, 1046.50, 783.99, 698.46, 659.25, 587.33, 523.25
-    ];
-
-    function playBgmNote(freq, duration, waveType, peakGain) {
-      if (!audioCtx || !bgmEnabled || !freq) return;
-      if (audioCtx.state === 'suspended') audioCtx.resume();
-      const now = audioCtx.currentTime;
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      const filter = audioCtx.createBiquadFilter();
-
-      osc.type = waveType;
-      osc.frequency.setValueAtTime(freq, now);
-      filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(gameMode === 'couple' ? 950 : 1800, now);
-
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.linearRampToValueAtTime(peakGain, now + 0.08);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-
-      osc.connect(filter);
-      filter.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(now);
-      osc.stop(now + duration + 0.05);
-    }
-
-    function startBgmLoop() {
-      if (bgmTimer) clearInterval(bgmTimer);
-      const tempoMs = gameMode === 'couple' ? 560 : 420;
-
-      bgmTimer = setInterval(() => {
-        if (!audioCtx || !bgmEnabled || audioCtx.state === 'suspended') return;
-        const isCouple = gameMode === 'couple';
-        const chords = isCouple ? ROMANTIC_CHORDS : CLASSIC_CHORDS;
-        const melody = isCouple ? ROMANTIC_MELODY : CLASSIC_MELODY;
-
-        if (bgmStep % 4 === 0) {
-          const chordIdx = Math.floor(bgmStep / 4) % chords.length;
-          chords[chordIdx].forEach(note => {
-            playBgmNote(note, isCouple ? 2.1 : 1.5, isCouple ? 'sine' : 'triangle', 0.016);
+        if (event === 'player_joined' && mySeat === 0) {
+          guestProfile = payload.guestProfile;
+          guestReady = true;
+          updateLobbyUI();
+          sendNetEvent('room_sync', {
+            hostProfile,
+            guestProfile,
+            gameMode,
+            enableCards: document.getElementById('optCards').checked,
+            enableLoveTiles: document.getElementById('optLoveTiles').checked
           });
+          // Jika game sudah berjalan (guest reconnect), kirim posisi papan terkini
+          if (document.getElementById('gameScreen').style.display === 'grid') {
+            sendNetEvent('state_recover', {
+              gameMode,
+              enableCards,
+              enableLoveTiles,
+              players,
+              currentPlayerIdx,
+              gameEnded
+            });
+          }
+        } else if (event === 'room_sync' && mySeat === 1) {
+          hostProfile = payload.hostProfile;
+          guestProfile = payload.guestProfile;
+          guestReady = true;
+          selectMode(payload.gameMode);
+          document.getElementById('optCards').checked = payload.enableCards;
+          document.getElementById('optLoveTiles').checked = payload.enableLoveTiles;
+          updateLobbyUI();
+        } else if (event === 'state_recover' && mySeat === 1) {
+          gameMode = payload.gameMode;
+          enableCards = payload.enableCards;
+          enableLoveTiles = payload.enableLoveTiles;
+          launchBoard(payload.players[0], payload.players[1]);
+          players[0].pos = payload.players[0].pos;
+          players[1].pos = payload.players[1].pos;
+          currentPlayerIdx = payload.currentPlayerIdx;
+          gameEnded = payload.gameEnded;
+          positionToken(0);
+          positionToken(1);
+          updateUI();
+          addLog('✅ Tersambung kembali ke permainan!');
+        } else if (event === 'game_started') {
+          gameMode = payload.gameMode;
+          enableCards = payload.enableCards;
+          enableLoveTiles = payload.enableLoveTiles;
+          launchBoard(payload.p1, payload.p2);
+        } else if (event === 'dice_rolled') {
+          executeTurnSequence(payload.roll, payload.ladderPromptIdx, payload.snakePromptIdx);
+        } else if (event === 'modal_closed') {
+          closeModal(true);
+        } else if (event === 'rematch') {
+          launchBoard(
+            { name: players[0].name, icon: players[0].icon, color: players[0].color, avatarUrl: players[0].avatarUrl },
+            { name: players[1].name, icon: players[1].icon, color: players[1].color, avatarUrl: players[1].avatarUrl }
+          );
+        } else if (event === 'quick_react') {
+          spawnFloatingEmoji(payload.emoji);
+          playTone(784, 'sine', 0.1);
+        } else if (event === 'quick_chat') {
+          playTone(587, 'triangle', 0.08);
+          addLog(`💬 <strong>${payload.sender}:</strong> ${String(payload.text).replace(/</g, '<')}`);
         }
-        const leadNote = melody[bgmStep % melody.length];
-        if (leadNote > 0) {
-          playBgmNote(leadNote, isCouple ? 0.65 : 0.36, isCouple ? 'triangle' : 'sine', 0.022);
+      });
+
+      conn.on('close', () => {
+        const statusEl = document.getElementById('connStatus');
+        if (statusEl) {
+          statusEl.textContent = 'Koneksi terputus, mencoba sambung ulang...';
+          statusEl.style.color = '#fbbf24';
         }
-        bgmStep++;
-      }, tempoMs);
+        if (mySeat === 1 && roomCode) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(() => attemptGuestReconnect(), 2500);
+        }
+      });
     }
 
-    function ensureAudioStarted() {
-      if (!audioCtx) return;
-      if (audioCtx.state === 'suspended') audioCtx.resume();
-      if (!bgmTimer && bgmEnabled) startBgmLoop();
-    }
-
-    window.addEventListener('click', () => ensureAudioStarted(), { once: true });
-
-    function toggleBgm() {
-      bgmEnabled = !bgmEnabled;
-      if (bgmEnabled) {
-        ensureAudioStarted();
-        startBgmLoop();
-      } else if (bgmTimer) {
-        clearInterval(bgmTimer);
-        bgmTimer = null;
-      }
-      updateAudioButtons();
-    }
-
-    function toggleSound() {
-      soundEnabled = !soundEnabled;
-      ensureAudioStarted();
-      updateAudioButtons();
-    }
-
-    function updateAudioButtons() {
-      const setupBgmBtn = document.getElementById('setupBgmBtn');
-      const bgmBtn = document.getElementById('bgmBtn');
-      const soundBtn = document.getElementById('soundBtn');
-
-      setupBgmBtn.innerHTML = bgmEnabled ? '🎵 BGM: ON' : '🔇 BGM: OFF';
-      setupBgmBtn.classList.toggle('active-audio', bgmEnabled);
-
-      bgmBtn.innerHTML = bgmEnabled ? '🎵 Musik' : '🔇 Musik';
-      bgmBtn.classList.toggle('active-audio', bgmEnabled);
-
-      soundBtn.innerHTML = soundEnabled ? '🔊 SFX' : '🔇 SFX';
-      soundBtn.classList.toggle('active-audio', soundEnabled);
-    }
-
-    function playTone(freq, type = 'sine', duration = 0.12, delay = 0) {
-      if (!audioCtx || !soundEnabled) return;
-      if (audioCtx.state === 'suspended') audioCtx.resume();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, audioCtx.currentTime + delay);
-      gain.gain.setValueAtTime(0.08, audioCtx.currentTime + delay);
-      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + delay + duration);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(audioCtx.currentTime + delay);
-      osc.stop(audioCtx.currentTime + delay + duration);
-    }
-
-    window.addEventListener('DOMContentLoaded', () => {
-      const savedName = localStorage.getItem('gasbro_player_name');
-      if (savedName) charConfigs.online.name = savedName;
-
-      renderCharacterBuilders();
-
-      const urlParams = new URLSearchParams(window.location.search);
-      const inviteRoom = urlParams.get('room');
-      if (inviteRoom) {
-        selectPlayType('online');
-        document.getElementById('joinCodeInput').value = inviteRoom.toUpperCase();
-      }
-    });
-
-    function selectPlayType(type) {
-      playType = type;
-      document.getElementById('tabLocal').classList.toggle('active', type === 'local');
-      document.getElementById('tabOnline').classList.toggle('active', type === 'online');
-
-      document.getElementById('localInputs').style.display = type === 'local' ? 'flex' : 'none';
-      document.getElementById('onlineBox').style.display = type === 'online' ? 'flex' : 'none';
-
-      const startBtn = document.getElementById('startBtn');
-      if (type === 'local') {
-        startBtn.disabled = false;
-        startBtn.innerHTML = 'Mulai Permainan 🚀';
-      } else {
-        startBtn.disabled = !(mySeat === 0 && guestReady);
-        startBtn.innerHTML = mySeat === 0
-          ? (guestReady ? 'Mulai Game Berdua 🚀' : 'Menunggu Pasangan Masuk Room...')
-          : 'Menunggu Host Memulai Game...';
-      }
-    }
-
-    function selectMode(mode) {
-      gameMode = mode;
-      const btnCouple = document.getElementById('btnModeCouple');
-      const btnClassic = document.getElementById('btnModeClassic');
-      const coupleOpts = document.getElementById('coupleOptions');
-
-      if (mode === 'couple') {
-        btnCouple.classList.add('active-couple');
-        btnClassic.classList.remove('active-classic');
-        coupleOpts.style.display = 'flex';
-      } else {
-        btnClassic.classList.add('active-classic');
-        btnCouple.classList.remove('active-couple');
-        coupleOpts.style.display = 'none';
-      }
-      if (bgmEnabled) startBgmLoop();
+    function attemptGuestReconnect() {
+      if (mySeat !== 1 || !roomCode || !peerInstance || peerInstance.destroyed) return;
+      if (peerConn && peerConn.open) return;
+      const conn = peerInstance.connect(`gasbro-ut-${roomCode}`, { reliable: true });
+      conn.on('open', () => {
+        const statusEl = document.getElementById('connStatus');
+        if (statusEl) {
+          statusEl.textContent = 'Terhubung kembali!';
+          statusEl.style.color = '#34d399';
+        }
+        setupConnectionHandlers(conn);
+        sendNetEvent('player_joined', { guestProfile });
+      });
     }
 
     function generateCode() {
@@ -1356,9 +1249,9 @@
       statusEl.textContent = 'Membuat room...';
       statusEl.style.color = '#fbbf24';
 
-      peerInstance = new Peer(`gasbro-ut-${roomCode}`);
+      peerInstance = new Peer(`gasbro-ut-${roomCode}`, PEER_CONFIG);
       peerInstance.on('open', () => {
-        statusEl.textContent = 'Room Aktif';
+        statusEl.textContent = 'Room Aktif (Siap)';
         statusEl.style.color = '#34d399';
         document.getElementById('roomLobbyCard').style.display = 'flex';
         document.getElementById('displayRoomCode').textContent = roomCode;
@@ -1366,12 +1259,13 @@
       });
 
       peerInstance.on('connection', (conn) => {
-        peerConn = conn;
-        conn.on('data', handleNetMessage);
-        conn.on('close', () => {
-          statusEl.textContent = 'Pasangan terputus';
-          statusEl.style.color = '#fb7185';
-        });
+        statusEl.textContent = 'Pasangan Terhubung!';
+        statusEl.style.color = '#34d399';
+        setupConnectionHandlers(conn);
+      });
+
+      peerInstance.on('disconnected', () => {
+        if (peerInstance && !peerInstance.destroyed) peerInstance.reconnect();
       });
 
       peerInstance.on('error', (err) => {
@@ -1403,28 +1297,28 @@
       statusEl.textContent = 'Menghubungkan ke room...';
       statusEl.style.color = '#fbbf24';
 
-      peerInstance = new Peer();
+      peerInstance = new Peer(PEER_CONFIG);
       peerInstance.on('open', () => {
-        peerConn = peerInstance.connect(`gasbro-ut-${code}`, { reliable: true });
-        peerConn.on('open', () => {
+        const conn = peerInstance.connect(`gasbro-ut-${code}`, { reliable: true });
+        conn.on('open', () => {
           statusEl.textContent = 'Terhubung ke Room!';
           statusEl.style.color = '#34d399';
           document.getElementById('roomLobbyCard').style.display = 'flex';
           document.getElementById('displayRoomCode').textContent = code;
+          setupConnectionHandlers(conn);
           updateLobbyUI();
           sendNetEvent('player_joined', { guestProfile });
         });
-        peerConn.on('data', handleNetMessage);
-        peerConn.on('close', () => {
-          statusEl.textContent = 'Terputus dari Host';
-          statusEl.style.color = '#fb7185';
-        });
+      });
+
+      peerInstance.on('disconnected', () => {
+        if (peerInstance && !peerInstance.destroyed) peerInstance.reconnect();
       });
 
       peerInstance.on('error', () => {
         statusEl.textContent = 'Room tidak ditemukan';
         statusEl.style.color = '#fb7185';
-        alert('Room tidak ditemukan atau Host belum membuat room.');
+        alert('Pastikan Host sudah menekan "Buat Room Baru" dan kode room sesuai.');
       });
     }
 
@@ -1457,6 +1351,12 @@
       if (!roomCode) return;
       const baseUrl = window.location.origin + window.location.pathname;
       const inviteUrl = `${baseUrl}?room=${roomCode}`;
+      navigator.clipboard.writeText(inviteUrl).catch(() => navigator.clipboard.writeText(roomCode));
+      const pill = document.getElementById('displayRoomCode');
+      const old = pill.textContent;
+      pill.textContent = 'LINK TERSALIN!';
+      setTimeout(() => { pill.textContent = old; }, 1200);
+    }?room=${roomCode}`;
       navigator.clipboard.writeText(inviteUrl).catch(() => navigator.clipboard.writeText(roomCode));
       const pill = document.getElementById('displayRoomCode');
       const old = pill.textContent;
@@ -1523,6 +1423,8 @@
       } else {
         roomTagBtn.style.display = 'none';
       }
+      const qBox = document.getElementById('quickChatBox');
+      if (qBox) qBox.style.display = playType === 'online' ? 'flex' : 'none';
 
       document.getElementById('logFeed').innerHTML = '';
 
@@ -1946,6 +1848,7 @@
   </script>
 </body>
 </html>
+
 
 
 
