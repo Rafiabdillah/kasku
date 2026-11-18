@@ -24,6 +24,8 @@
     }
 
     * {
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
       box-sizing: border-box;
       margin: 0;
       padding: 0;
@@ -43,6 +45,8 @@
     }
 
     .orb {
+      z-index: -1;
+      touch-action: none;
       position: fixed;
       border-radius: 50%;
       filter: blur(90px);
@@ -1217,8 +1221,7 @@
       if (!bgmTimer && bgmEnabled) startBgmLoop();
     }
 
-    ['click', 'touchstart'].forEach(evt => {
-      window.addEventListener(evt, () => ensureAudioStarted(), { once: true });
+    window.addEventListener('click', () => ensureAudioStarted(), { once: true });
     });
 
     function toggleBgm() {
@@ -1935,8 +1938,9 @@
     }
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./sw.js?v=2').catch(() => {});
     }
   </script>
 </body>
 </html>
+
