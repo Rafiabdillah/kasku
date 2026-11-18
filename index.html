@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
     :root {
       --bg-dark: #0f172a;
@@ -1035,28 +1035,16 @@
     let currentPlayerIdx = 0;
     let gameEnded = false;
 
-    // PeerJS Enhanced Online State (STUN + Heartbeat + Auto-Reconnect + State Sync)
-    let peerInstance = null;
-    let peerConn = null;
-    let heartbeatTimer = null;
-    let reconnectTimer = null;
+    // MQTT WebSocket Real-Time Online State (Anti-Blokir Jaringan Seluler, Zero-Config)
+    let mqttClient = null;
+    let roomTopic = '';
     let roomCode = '';
     let mySeat = 0;
+    let myClientId = 'p_' + Math.random().toString(36).substring(2, 10);
     let hostProfile = { name: 'Host', icon: '\u265A', color: TOKEN_COLORS[0], avatarUrl: '' };
     let guestProfile = { name: '', icon: '\u265B', color: TOKEN_COLORS[1], avatarUrl: '' };
     let guestReady = false;
-
-    const PEER_CONFIG = {
-      debug: 0,
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:global.stun.twilio.com:3478' }
-        ]
-      }
-    };
+    let joinTimeout = null;
 
     let players = [
       { name: 'Player 1', pos: 1, icon: '\u265A', color: TOKEN_COLORS[0], avatarUrl: '' },
@@ -1071,20 +1059,13 @@
     }
 
     function sendNetEvent(event, payload = {}) {
-      if (playType === 'online' && peerConn && peerConn.open) {
-        try {
-          peerConn.send({ event, payload });
-        } catch (e) {}
+      if (playType === 'online' && mqttClient && mqttClient.connected && roomTopic) {
+        mqttClient.publish(roomTopic, JSON.stringify({
+          senderId: myClientId,
+          event,
+          payload
+        }));
       }
-    }
-
-    function startHeartbeat() {
-      if (heartbeatTimer) clearInterval(heartbeatTimer);
-      heartbeatTimer = setInterval(() => {
-        if (peerConn && peerConn.open) {
-          sendNetEvent('ping', { ts: Date.now() });
-        }
-      }, 4000);
     }
 
     function spawnFloatingEmoji(emoji) {
@@ -1112,24 +1093,53 @@
       sendNetEvent('quick_chat', { sender, text });
     }
 
-    function setupConnectionHandlers(conn) {
-      peerConn = conn;
-      startHeartbeat();
+    function connectMqttBroker(code, onReadyCallback) {
+      if (mqttClient) {
+        try { mqttClient.end(true); } catch (e) {}
+      }
+      roomCode = code;
+      roomTopic = `gasbro/ulartangga/v2/${code}`;
 
-      conn.on('data', (data) => {
-        if (!data || !data.event) return;
-        const { event, payload } = data;
+      const statusEl = document.getElementById('connStatus');
+      statusEl.textContent = 'Menghubungkan ke server...';
+      statusEl.style.color = '#fbbf24';
 
-        if (event === 'ping') {
-          sendNetEvent('pong', {});
+      // Broker publik WSS port 8084 (EMQX) - sangat cepat & stabil di jaringan HP Indonesia
+      mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+        clientId: 'gasbro_' + myClientId + '_' + Date.now(),
+        clean: true,
+        connectTimeout: 8000,
+        reconnectPeriod: 2000
+      });
+
+      mqttClient.on('connect', () => {
+        mqttClient.subscribe(roomTopic, { qos: 1 }, (err) => {
+          if (!err) {
+            onReadyCallback();
+          }
+        });
+      });
+
+      mqttClient.on('message', (topic, messageBuf) => {
+        if (topic !== roomTopic) return;
+        let data;
+        try {
+          data = JSON.parse(messageBuf.toString());
+        } catch (e) {
           return;
         }
-        if (event === 'pong') return;
+        // Abaikan pesan pantulan dari diri sendiri
+        if (!data || data.senderId === myClientId) return;
+
+        const { event, payload } = data;
 
         if (event === 'player_joined' && mySeat === 0) {
           guestProfile = payload.guestProfile;
           guestReady = true;
+          statusEl.textContent = 'Pasangan Terhubung!';
+          statusEl.style.color = '#34d399';
           updateLobbyUI();
+
           sendNetEvent('room_sync', {
             hostProfile,
             guestProfile,
@@ -1137,7 +1147,7 @@
             enableCards: document.getElementById('optCards').checked,
             enableLoveTiles: document.getElementById('optLoveTiles').checked
           });
-          // Jika game sudah berjalan (guest reconnect), kirim posisi papan terkini
+
           if (document.getElementById('gameScreen').style.display === 'grid') {
             sendNetEvent('state_recover', {
               gameMode,
@@ -1149,14 +1159,18 @@
             });
           }
         } else if (event === 'room_sync' && mySeat === 1) {
+          clearTimeout(joinTimeout);
           hostProfile = payload.hostProfile;
           guestProfile = payload.guestProfile;
           guestReady = true;
+          statusEl.textContent = 'Berhasil Gabung Room!';
+          statusEl.style.color = '#34d399';
           selectMode(payload.gameMode);
           document.getElementById('optCards').checked = payload.enableCards;
           document.getElementById('optLoveTiles').checked = payload.enableLoveTiles;
           updateLobbyUI();
         } else if (event === 'state_recover' && mySeat === 1) {
+          clearTimeout(joinTimeout);
           gameMode = payload.gameMode;
           enableCards = payload.enableCards;
           enableLoveTiles = payload.enableLoveTiles;
@@ -1169,7 +1183,7 @@
           positionToken(1);
           updateUI();
           addLog('✅ Tersambung kembali ke permainan!');
-        } else if (event === 'game_started') {
+        } else if (event === 'game_started' && mySeat === 1) {
           gameMode = payload.gameMode;
           enableCards = payload.enableCards;
           enableLoveTiles = payload.enableLoveTiles;
@@ -1192,31 +1206,9 @@
         }
       });
 
-      conn.on('close', () => {
-        const statusEl = document.getElementById('connStatus');
-        if (statusEl) {
-          statusEl.textContent = 'Koneksi terputus, mencoba sambung ulang...';
-          statusEl.style.color = '#fbbf24';
-        }
-        if (mySeat === 1 && roomCode) {
-          clearTimeout(reconnectTimer);
-          reconnectTimer = setTimeout(() => attemptGuestReconnect(), 2500);
-        }
-      });
-    }
-
-    function attemptGuestReconnect() {
-      if (mySeat !== 1 || !roomCode || !peerInstance || peerInstance.destroyed) return;
-      if (peerConn && peerConn.open) return;
-      const conn = peerInstance.connect(`gasbro-ut-${roomCode}`, { reliable: true });
-      conn.on('open', () => {
-        const statusEl = document.getElementById('connStatus');
-        if (statusEl) {
-          statusEl.textContent = 'Terhubung kembali!';
-          statusEl.style.color = '#34d399';
-        }
-        setupConnectionHandlers(conn);
-        sendNetEvent('player_joined', { guestProfile });
+      mqttClient.on('error', () => {
+        statusEl.textContent = 'Gangguan jaringan, menyambung ulang...';
+        statusEl.style.color = '#fb7185';
       });
     }
 
@@ -1230,10 +1222,9 @@
     function createOnlineRoom() {
       const myName = charConfigs.online.name.trim();
       if (!myName) { alert('Isi nama panggilan kamu dulu ya!'); return; }
-      if (!window.Peer) { alert('Library koneksi sedang dimuat, coba klik lagi sebentar.'); return; }
+      if (!window.mqtt) { alert('Library koneksi sedang dimuat, tunggu 2 detik lalu klik lagi.'); return; }
       localStorage.setItem('gasbro_player_name', myName);
 
-      if (peerInstance) peerInstance.destroy();
       mySeat = 0;
       hostProfile = {
         name: myName,
@@ -1243,49 +1234,28 @@
       };
       guestProfile = { name: '', icon: '\u265B', color: TOKEN_COLORS[1], avatarUrl: '' };
       guestReady = false;
-      roomCode = generateCode();
+      const newCode = generateCode();
 
-      const statusEl = document.getElementById('connStatus');
-      statusEl.textContent = 'Membuat room...';
-      statusEl.style.color = '#fbbf24';
-
-      peerInstance = new Peer(`gasbro-ut-${roomCode}`, PEER_CONFIG);
-      peerInstance.on('open', () => {
-        statusEl.textContent = 'Room Aktif (Siap)';
+      connectMqttBroker(newCode, () => {
+        const statusEl = document.getElementById('connStatus');
+        statusEl.textContent = 'Room Aktif (Online)';
         statusEl.style.color = '#34d399';
         document.getElementById('roomLobbyCard').style.display = 'flex';
-        document.getElementById('displayRoomCode').textContent = roomCode;
+        document.getElementById('displayRoomCode').textContent = newCode;
         updateLobbyUI();
-      });
-
-      peerInstance.on('connection', (conn) => {
-        statusEl.textContent = 'Pasangan Terhubung!';
-        statusEl.style.color = '#34d399';
-        setupConnectionHandlers(conn);
-      });
-
-      peerInstance.on('disconnected', () => {
-        if (peerInstance && !peerInstance.destroyed) peerInstance.reconnect();
-      });
-
-      peerInstance.on('error', (err) => {
-        statusEl.textContent = 'Gagal membuat room';
-        statusEl.style.color = '#fb7185';
-        alert('Koneksi room bermasalah (' + err.type + '). Silakan klik Buat Room Baru lagi.');
       });
     }
 
     function joinOnlineRoom() {
       const myName = charConfigs.online.name.trim();
       if (!myName) { alert('Isi nama panggilan kamu dulu ya!'); return; }
-      if (!window.Peer) { alert('Library koneksi sedang dimuat, coba klik lagi sebentar.'); return; }
+      if (!window.mqtt) { alert('Library koneksi sedang dimuat, tunggu 2 detik lalu klik lagi.'); return; }
       const code = document.getElementById('joinCodeInput').value.trim().toUpperCase();
-      if (code.length < 4) { alert('Masukkan kode room dari pasanganmu.'); return; }
+      if (code.length < 4) { alert('Masukkan 5 karakter kode room dari pasanganmu.'); return; }
       localStorage.setItem('gasbro_player_name', myName);
 
-      if (peerInstance) peerInstance.destroy();
       mySeat = 1;
-      roomCode = code;
+      guestReady = false;
       guestProfile = {
         name: myName,
         icon: charConfigs.online.icon,
@@ -1293,32 +1263,22 @@
         avatarUrl: charConfigs.online.avatarUrl || ''
       };
 
-      const statusEl = document.getElementById('connStatus');
-      statusEl.textContent = 'Menghubungkan ke room...';
-      statusEl.style.color = '#fbbf24';
+      connectMqttBroker(code, () => {
+        const statusEl = document.getElementById('connStatus');
+        statusEl.textContent = 'Mencari Host...';
+        statusEl.style.color = '#fbbf24';
+        document.getElementById('roomLobbyCard').style.display = 'flex';
+        document.getElementById('displayRoomCode').textContent = code;
+        updateLobbyUI();
 
-      peerInstance = new Peer(PEER_CONFIG);
-      peerInstance.on('open', () => {
-        const conn = peerInstance.connect(`gasbro-ut-${code}`, { reliable: true });
-        conn.on('open', () => {
-          statusEl.textContent = 'Terhubung ke Room!';
-          statusEl.style.color = '#34d399';
-          document.getElementById('roomLobbyCard').style.display = 'flex';
-          document.getElementById('displayRoomCode').textContent = code;
-          setupConnectionHandlers(conn);
-          updateLobbyUI();
-          sendNetEvent('player_joined', { guestProfile });
-        });
-      });
+        // Kirim sinyal join
+        sendNetEvent('player_joined', { guestProfile });
 
-      peerInstance.on('disconnected', () => {
-        if (peerInstance && !peerInstance.destroyed) peerInstance.reconnect();
-      });
-
-      peerInstance.on('error', () => {
-        statusEl.textContent = 'Room tidak ditemukan';
-        statusEl.style.color = '#fb7185';
-        alert('Pastikan Host sudah menekan "Buat Room Baru" dan kode room sesuai.');
+        // Ulangi sinyal join 2 detik kemudian jika paket pertama terlewat
+        clearTimeout(joinTimeout);
+        joinTimeout = setTimeout(() => {
+          if (!guestReady) sendNetEvent('player_joined', { guestProfile });
+        }, 2000);
       });
     }
 
@@ -1340,7 +1300,7 @@
         if (guestReady) {
           lobbyText.innerHTML = `💖 Terhubung dengan ${hostProfile.icon} <strong>${hostProfile.name}</strong>! Menunggu Host memulai...`;
         } else {
-          lobbyText.innerHTML = `Mencari Host di room <strong>${roomCode}</strong>...`;
+          lobbyText.innerHTML = `Menunggu balasan dari Host di room <strong>${roomCode}</strong>...`;
         }
         startBtn.disabled = true;
         startBtn.innerHTML = 'Menunggu Host Memulai Game...';
@@ -1351,6 +1311,12 @@
       if (!roomCode) return;
       const baseUrl = window.location.origin + window.location.pathname;
       const inviteUrl = `${baseUrl}?room=${roomCode}`;
+      navigator.clipboard.writeText(inviteUrl).catch(() => navigator.clipboard.writeText(roomCode));
+      const pill = document.getElementById('displayRoomCode');
+      const old = pill.textContent;
+      pill.textContent = 'LINK TERSALIN!';
+      setTimeout(() => { pill.textContent = old; }, 1200);
+    }?room=${roomCode}`;
       navigator.clipboard.writeText(inviteUrl).catch(() => navigator.clipboard.writeText(roomCode));
       const pill = document.getElementById('displayRoomCode');
       const old = pill.textContent;
@@ -1848,6 +1814,7 @@
   </script>
 </body>
 </html>
+
 
 
 
