@@ -50,7 +50,6 @@
       position: fixed;
       border-radius: 50%;
       filter: blur(90px);
-      z-index: 0;
       pointer-events: none;
       opacity: 0.45;
     }
@@ -1084,7 +1083,12 @@
       `;
     }
 
-    function setCharName(key, val) { charConfigs[key].name = val; }
+        function setCharName(key, val) { charConfigs[key].name = val; }
+
+    function setCharColor(key, color) {
+      charConfigs[key].color = color;
+      renderCharacterBuilders();
+    }
 
     function setCharIcon(key, icon) {
       charConfigs[key].avatarUrl = '';
@@ -1222,7 +1226,6 @@
     }
 
     window.addEventListener('click', () => ensureAudioStarted(), { once: true });
-    });
 
     function toggleBgm() {
       bgmEnabled = !bgmEnabled;
@@ -1938,10 +1941,11 @@
     }
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('./sw.js?v=2').catch(() => {});
+      navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
     }
   </script>
 </body>
 </html>
+
 
 
