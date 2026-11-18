@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ular Tangga Modern - Couple, Classic &amp; Online LDR</title>
+  <title>Ular Tangga Modern - Couple, Classic & Online LDR</title>
+  <link rel="manifest" href="manifest.json" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -169,7 +170,6 @@
     .mode-title { font-weight: 700; font-size: 0.94rem; display: block; margin-bottom: 2px; }
     .mode-desc { font-size: 0.74rem; color: var(--text-muted); line-height: 1.4; }
 
-    /* CHARACTER CUSTOMIZER */
     .char-builder-list {
       display: flex;
       flex-direction: column;
@@ -229,9 +229,7 @@
       font-weight: 700;
       width: 100%;
     }
-    .char-top-row input[type="text"]:focus {
-      border-color: var(--accent-pink);
-    }
+    .char-top-row input[type="text"]:focus { border-color: var(--accent-pink); }
 
     .char-picker-row {
       display: flex;
@@ -297,10 +295,7 @@
       gap: 4px;
       transition: all 0.16s ease;
     }
-    .upload-photo-btn:hover {
-      background: rgba(14, 165, 233, 0.28);
-      border-color: #38bdf8;
-    }
+    .upload-photo-btn:hover { background: rgba(14, 165, 233, 0.28); border-color: #38bdf8; }
 
     .clear-photo-btn {
       width: 24px;
@@ -317,12 +312,7 @@
       justify-content: center;
     }
 
-    .color-swatches {
-      display: flex;
-      gap: 6px;
-      align-items: center;
-    }
-
+    .color-swatches { display: flex; gap: 6px; align-items: center; }
     .swatch-btn {
       width: 22px;
       height: 22px;
@@ -390,10 +380,7 @@
     }
     .secondary-btn:hover { background: rgba(51, 65, 85, 0.95); }
 
-    .join-row {
-      display: flex;
-      gap: 8px;
-    }
+    .join-row { display: flex; gap: 8px; }
 
     .room-lobby-card {
       display: none;
@@ -465,10 +452,7 @@
       transform: translateY(-2px);
       box-shadow: 0 16px 34px rgba(236, 72, 153, 0.45);
     }
-    .primary-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
+    .primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* GAME SCREEN */
     .game-layout {
@@ -612,11 +596,7 @@
       color: #fbcfe8;
     }
 
-    .players-status {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
+    .players-status { display: flex; flex-direction: column; gap: 10px; }
 
     .player-card {
       display: flex;
@@ -635,11 +615,7 @@
       box-shadow: 0 8px 20px rgba(236, 72, 153, 0.15);
     }
 
-    .player-meta {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
+    .player-meta { display: flex; align-items: center; gap: 10px; }
 
     .player-pos {
       font-weight: 800;
@@ -676,9 +652,7 @@
       transition: transform 0.25s ease;
     }
 
-    .dice-visual.rolling {
-      animation: diceShake 0.45s infinite ease-in-out;
-    }
+    .dice-visual.rolling { animation: diceShake 0.45s infinite ease-in-out; }
 
     @keyframes diceShake {
       0% { transform: rotate(0deg) scale(1.05); }
@@ -711,14 +685,8 @@
       box-shadow: 0 10px 24px rgba(244, 63, 94, 0.35);
       transition: all 0.2s;
     }
-    .roll-btn:disabled {
-      opacity: 0.45;
-      cursor: not-allowed;
-      transform: none;
-    }
-    .roll-btn:not(:disabled):hover {
-      transform: translateY(-2px);
-    }
+    .roll-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .roll-btn:not(:disabled):hover { transform: translateY(-2px); }
 
     .log-feed {
       background: rgba(15, 23, 42, 0.5);
@@ -786,7 +754,6 @@
       }
     }
   </style>
-  <link rel="manifest" href="manifest.json" />
 </head>
 <body>
   <div class="orb orb-1"></div>
@@ -796,26 +763,26 @@
     <!-- SETUP VIEW -->
     <section id="setupScreen" class="setup-card">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-        <span class="badge" style="margin:0;">&#10024; MODERN SNAKES &amp; LADDERS</span>
-        <button type="button" id="setupBgmBtn" class="icon-btn active-audio" onclick="toggleBgm()">&#127925; BGM: ON</button>
+        <span class="badge" style="margin:0;">✨ MODERN SNAKES & LADDERS</span>
+        <button type="button" id="setupBgmBtn" class="icon-btn active-audio" onclick="toggleBgm()">🎵 BGM: ON</button>
       </div>
       <h1>Ular Tangga Modern</h1>
-      <p class="subtitle">Pilih karakter favoritmu atau buat pion kustom sendiri. Bisa main bareng di 1 perangkat maupun <strong>Online LDR</strong> real-time!</p>
+      <p class="subtitle">Pilih karakter favoritmu atau upload foto pion sendiri. Bisa main bareng di 1 perangkat maupun <strong>Online LDR</strong> tanpa akun!</p>
 
       <!-- LOCAL VS ONLINE TABS -->
       <div class="tab-switch">
-        <button type="button" id="tabLocal" class="tab-btn active" onclick="selectPlayType('local')">&#128241; Main Lokal (1 HP/PC)</button>
-        <button type="button" id="tabOnline" class="tab-btn" onclick="selectPlayType('online')">&#127760; Room Online (LDR)</button>
+        <button type="button" id="tabLocal" class="tab-btn active" onclick="selectPlayType('local')">📱 Main Lokal (1 HP/PC)</button>
+        <button type="button" id="tabOnline" class="tab-btn" onclick="selectPlayType('online')">🌐 Room Online (LDR)</button>
       </div>
 
       <div class="mode-grid">
         <button type="button" id="btnModeCouple" class="mode-btn active-couple" onclick="selectMode('couple')">
-          <span class="mode-icon">&#128145;</span>
+          <span class="mode-icon">💑</span>
           <span class="mode-title">Mode Pasangan</span>
-          <span class="mode-desc">40 Kartu Truth &amp; Dare realistis + musik Lo-Fi hangat.</span>
+          <span class="mode-desc">40 Kartu Truth & Dare realistis + musik Lo-Fi hangat.</span>
         </button>
         <button type="button" id="btnModeClassic" class="mode-btn" onclick="selectMode('classic')">
-          <span class="mode-icon">&#127922;</span>
+          <span class="mode-icon">🎲</span>
           <span class="mode-title">Mode Klasik</span>
           <span class="mode-desc">Balapan ular tangga murni + musik synth ceria.</span>
         </button>
@@ -827,16 +794,16 @@
         <div class="char-card" id="builder-1"></div>
       </div>
 
-      <!-- ONLINE SUPABASE ROOM CONFIG + MY CHARACTER -->
+      <!-- ONLINE ZERO-CONFIG P2P ROOM -->
       <div id="onlineBox" class="online-box">
         <div class="online-box-title">
-          <span>⚡ Koneksi Langsung (Tanpa Akun / API Key)</span>
+          <span>⚡ Room Online Langsung (Tanpa API Key)</span>
           <span id="connStatus" style="font-size:0.74rem; color:#34d399;">Siap digunakan</span>
         </div>
         <div class="char-card" id="builder-online" style="background:rgba(15,23,42,0.78);"></div>
 
         <div id="roomControls" class="room-actions">
-          <button type="button" class="secondary-btn" onclick="createOnlineRoom()">&#10133; Buat Room Baru</button>
+          <button type="button" class="secondary-btn" onclick="createOnlineRoom()">➕ Buat Room Baru</button>
           <div class="join-row">
             <input id="joinCodeInput" class="small-field" type="text" placeholder="Kode Room" maxlength="6" style="text-transform:uppercase; font-weight:800; text-align:center;" />
             <button type="button" class="secondary-btn" onclick="joinOnlineRoom()">Gabung</button>
@@ -844,24 +811,24 @@
         </div>
 
         <div id="roomLobbyCard" class="room-lobby-card">
-          <div style="font-size:0.78rem; color:#cbd5e1;">Bagikan Kode Room ini ke pasanganmu (klik untuk salin):</div>
-          <div id="displayRoomCode" class="room-code-pill" onclick="copyRoomCode()">-----</div>
+          <div style="font-size:0.78rem; color:#cbd5e1;">Klik kode di bawah untuk salin link undangan langsung ke pasangan:</div>
+          <div id="displayRoomCode" class="room-code-pill" onclick="copyRoomLink()">-----</div>
           <div id="lobbyPlayersText" style="font-size:0.84rem; color:#f9a8d4; font-weight:600;">Menunggu pasangan bergabung...</div>
         </div>
       </div>
 
       <div id="coupleOptions" class="couple-options">
         <label class="toggle-line">
-          <span>&#128140; Kartu Truth &amp; Dare saat kena Ular / Tangga</span>
+          <span>💌 Kartu Truth & Dare saat kena Ular / Tangga</span>
           <input type="checkbox" id="optCards" checked />
         </label>
         <label class="toggle-line">
-          <span>&#128150; Kotak Cinta (Bonus maju +2 langkah jika mendarat)</span>
+          <span>💖 Kotak Cinta (Bonus maju +2 langkah jika mendarat)</span>
           <input type="checkbox" id="optLoveTiles" checked />
         </label>
       </div>
 
-      <button type="button" id="startBtn" class="primary-btn" onclick="handleStartClick()">Mulai Permainan &#128640;</button>
+      <button type="button" id="startBtn" class="primary-btn" onclick="handleStartClick()">Mulai Permainan 🚀</button>
     </section>
 
     <!-- GAME VIEW -->
@@ -874,12 +841,12 @@
 
       <aside class="side-panel">
         <div class="panel-header">
-          <span id="activeModeBadge" class="badge" style="margin:0;">&#128145; MODE PASANGAN</span>
+          <span id="activeModeBadge" class="badge" style="margin:0;">💑 MODE PASANGAN</span>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button type="button" id="roomTagBtn" class="icon-btn" style="display:none;" onclick="copyRoomCode()">Room: -----</button>
-            <button type="button" id="bgmBtn" class="icon-btn active-audio" onclick="toggleBgm()">&#127925; Musik</button>
-            <button type="button" id="soundBtn" class="icon-btn active-audio" onclick="toggleSound()">&#128266; SFX</button>
-            <button type="button" id="menuBtn" class="icon-btn" onclick="backToMenu()">&#9881; Menu</button>
+            <button type="button" id="roomTagBtn" class="icon-btn" style="display:none;" onclick="copyRoomLink()">Room: -----</button>
+            <button type="button" id="bgmBtn" class="icon-btn active-audio" onclick="toggleBgm()">🎵 Musik</button>
+            <button type="button" id="soundBtn" class="icon-btn active-audio" onclick="toggleSound()">🔊 SFX</button>
+            <button type="button" id="menuBtn" class="icon-btn" onclick="backToMenu()">⚙ Menu</button>
           </div>
         </div>
 
@@ -892,7 +859,7 @@
             <span class="pip" data-p="4"></span><span class="pip" data-p="5"></span><span class="pip" data-p="6"></span>
             <span class="pip" data-p="7"></span><span class="pip" data-p="8"></span><span class="pip" data-p="9"></span>
           </div>
-          <button type="button" id="rollBtn" class="roll-btn" onclick="handleRoll()">&#127922; Kocok Dadu</button>
+          <button type="button" id="rollBtn" class="roll-btn" onclick="handleRoll()">🎲 Kocok Dadu</button>
         </div>
 
         <div>
@@ -906,40 +873,19 @@
   <!-- COUPLE CARD / WINNER MODAL -->
   <div id="modalBackdrop" class="modal-backdrop">
     <div class="modal-card">
-      <span id="modalEmoji" class="modal-emoji">&#128140;</span>
+      <span id="modalEmoji" class="modal-emoji">💌</span>
       <span id="modalTag" class="modal-tag">KARTU PASANGAN</span>
       <h2 id="modalTitle" class="modal-title">Tantangan Manis</h2>
       <p id="modalBody" class="modal-body">Isi tantangan di sini.</p>
-      <button type="button" id="modalActionBtn" class="primary-btn" onclick="closeModal()">Selesai &amp; Lanjut &#10024;</button>
+      <button type="button" id="modalActionBtn" class="primary-btn" onclick="closeModal()">Selesai & Lanjut ✨</button>
     </div>
   </div>
 
   <script>
-    const LADDERS = {
-      4: 25,
-      13: 46,
-      22: 41,
-      33: 52,
-      42: 63,
-      50: 69,
-      62: 81,
-      74: 92
-    };
-
-    const SNAKES = {
-      27: 5,
-      40: 18,
-      54: 31,
-      66: 45,
-      76: 58,
-      89: 67,
-      95: 72,
-      99: 79
-    };
-
+    const LADDERS = { 4: 25, 13: 46, 22: 41, 33: 52, 42: 63, 50: 69, 62: 81, 74: 92 };
+    const SNAKES = { 27: 5, 40: 18, 54: 31, 66: 45, 76: 58, 89: 67, 95: 72, 99: 79 };
     const LOVE_TILES = [9, 19, 29, 37, 48, 59, 71, 84];
 
-    // Preset Karakter & Warna Pion
     const PRESET_CHARACTERS = [
       { icon: '\u265A', label: 'Raja' },
       { icon: '\u265B', label: 'Ratu' },
@@ -952,12 +898,12 @@
     ];
 
     const TOKEN_COLORS = [
-      'linear-gradient(135deg,#3b82f6,#6366f1)', // Royal Blue
-      'linear-gradient(135deg,#ec4899,#f43f5e)', // Rose Pink
-      'linear-gradient(135deg,#10b981,#059669)', // Emerald
-      'linear-gradient(135deg,#f59e0b,#ea580c)', // Sunset Amber
-      'linear-gradient(135deg,#8b5cf6,#6d28d9)', // Violet
-      'linear-gradient(135deg,#06b6d4,#0284c7)'  // Ocean Cyan
+      'linear-gradient(135deg,#3b82f6,#6366f1)',
+      'linear-gradient(135deg,#ec4899,#f43f5e)',
+      'linear-gradient(135deg,#10b981,#059669)',
+      'linear-gradient(135deg,#f59e0b,#ea580c)',
+      'linear-gradient(135deg,#8b5cf6,#6d28d9)',
+      'linear-gradient(135deg,#06b6d4,#0284c7)'
     ];
 
     const charConfigs = {
@@ -1022,7 +968,7 @@
     let currentPlayerIdx = 0;
     let gameEnded = false;
 
-    // Online state (PeerJS Zero-Config P2P)
+    // PeerJS Zero-Config Online State
     let peerInstance = null;
     let peerConn = null;
     let roomCode = '';
@@ -1037,10 +983,10 @@
     ];
 
     function renderAvatarInner(p) {
-      if (p.avatarUrl) {
+      if (p && p.avatarUrl) {
         return `<img src="${p.avatarUrl}" alt="${p.name || 'Avatar'}" />`;
       }
-      return p.icon;
+      return p ? p.icon : '?';
     }
 
     function sendNetEvent(event, payload = {}) {
@@ -1089,6 +1035,292 @@
       }
     }
 
+    function renderCharacterBuilders() {
+      renderSingleBuilder('builder-0', 0, 'Nama Pemain 1');
+      renderSingleBuilder('builder-1', 1, 'Nama Pemain 2');
+      renderSingleBuilder('builder-online', 'online', 'Nama Panggilan Kamu (misal: Dzaki / Atika)');
+    }
+
+    function renderSingleBuilder(containerId, key, placeholderText) {
+      const el = document.getElementById(containerId);
+      if (!el) return;
+      const cfg = charConfigs[key];
+
+      const presetsHtml = PRESET_CHARACTERS.map(p => {
+        const isSel = !cfg.avatarUrl && cfg.icon === p.icon;
+        return `<button type="button" class="preset-btn ${isSel ? 'selected' : ''}" title="${p.label}" onclick="setCharIcon('${key}', '${p.icon}')">${p.icon}</button>`;
+      }).join('');
+
+      const swatchesHtml = TOKEN_COLORS.map(c => {
+        const isSel = cfg.color === c;
+        return `<button type="button" class="swatch-btn ${isSel ? 'selected' : ''}" style="background:${c};" onclick="setCharColor('${key}', '${c}')"></button>`;
+      }).join('');
+
+      const clearBtnHtml = cfg.avatarUrl
+        ? `<button type="button" class="clear-photo-btn" title="Hapus Foto" onclick="clearCharPhoto('${key}')">×</button>`
+        : '';
+
+      el.innerHTML = `
+        <div class="char-top-row">
+          <div class="avatar-dot" id="preview-${key}" style="background:${cfg.color};">${renderAvatarInner(cfg)}</div>
+          <input type="text" value="${cfg.name}" placeholder="${placeholderText}" maxlength="18" oninput="setCharName('${key}', this.value)" />
+        </div>
+        <div class="char-picker-row">
+          <div class="preset-icons">
+            ${presetsHtml}
+            <input type="text" class="custom-char-input" maxlength="2" placeholder="Kustom" title="Ketik 1-2 huruf/emoji karakter sendiri" oninput="setCustomCharIcon('${key}', this.value)" />
+            <label class="upload-photo-btn" title="Upload foto dari galeri HP/Laptop">
+              📷 Foto
+              <input type="file" accept="image/*" style="display:none;" onchange="handlePhotoUpload('${key}', this)" />
+            </label>
+            ${clearBtnHtml}
+          </div>
+          <div class="color-swatches">${swatchesHtml}</div>
+        </div>
+      `;
+    }
+
+    function setCharName(key, val) { charConfigs[key].name = val; }
+
+    function setCharIcon(key, icon) {
+      charConfigs[key].avatarUrl = '';
+      charConfigs[key].icon = icon;
+      renderCharacterBuilders();
+    }
+
+    function setCustomCharIcon(key, val) {
+      const trimmed = val.trim();
+      if (!trimmed) return;
+      charConfigs[key].avatarUrl = '';
+      charConfigs[key].icon = trimmed;
+      const preview = document.getElementById(`preview-${key}`);
+      if (preview) preview.textContent = trimmed;
+      const container = document.getElementById(`builder-${key}`);
+      if (container) {
+        container.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('selected'));
+      }
+    }
+
+    function clearCharPhoto(key) {
+      charConfigs[key].avatarUrl = '';
+      renderCharacterBuilders();
+    }
+
+    function handlePhotoUpload(key, inputEl) {
+      const file = inputEl.files && inputEl.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          const size = 96;
+          const canvas = document.createElement('canvas');
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+
+          const minSide = Math.min(img.width, img.height);
+          const sx = (img.width - minSide) / 2;
+          const sy = (img.height - minSide) / 2;
+          ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+
+          charConfigs[key].avatarUrl = canvas.toDataURL('image/jpeg', 0.75);
+          renderCharacterBuilders();
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // ==========================================
+    // WEB AUDIO ENGINE (SFX + AMBIENT BGM LOOP)
+    // ==========================================
+    const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = AudioCtxClass ? new AudioCtxClass() : null;
+    let bgmTimer = null;
+    let bgmStep = 0;
+
+    const ROMANTIC_CHORDS = [
+      [174.61, 220.00, 261.63, 329.63],
+      [164.81, 196.00, 246.94, 293.66],
+      [146.83, 174.61, 220.00, 261.63],
+      [130.81, 164.81, 196.00, 246.94]
+    ];
+    const ROMANTIC_MELODY = [
+      523.25, 0, 493.88, 440.00, 392.00, 0, 329.63, 392.00,
+      440.00, 0, 392.00, 329.63, 293.66, 0, 329.63, 261.63
+    ];
+
+    const CLASSIC_CHORDS = [
+      [261.63, 329.63, 392.00],
+      [196.00, 246.94, 293.66],
+      [220.00, 261.63, 329.63],
+      [174.61, 220.00, 261.63]
+    ];
+    const CLASSIC_MELODY = [
+      523.25, 659.25, 783.99, 659.25, 587.33, 698.46, 880.00, 698.46,
+      659.25, 783.99, 1046.50, 783.99, 698.46, 659.25, 587.33, 523.25
+    ];
+
+    function playBgmNote(freq, duration, waveType, peakGain) {
+      if (!audioCtx || !bgmEnabled || !freq) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      const filter = audioCtx.createBiquadFilter();
+
+      osc.type = waveType;
+      osc.frequency.setValueAtTime(freq, now);
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(gameMode === 'couple' ? 950 : 1800, now);
+
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.linearRampToValueAtTime(peakGain, now + 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + duration + 0.05);
+    }
+
+    function startBgmLoop() {
+      if (bgmTimer) clearInterval(bgmTimer);
+      const tempoMs = gameMode === 'couple' ? 560 : 420;
+
+      bgmTimer = setInterval(() => {
+        if (!audioCtx || !bgmEnabled || audioCtx.state === 'suspended') return;
+        const isCouple = gameMode === 'couple';
+        const chords = isCouple ? ROMANTIC_CHORDS : CLASSIC_CHORDS;
+        const melody = isCouple ? ROMANTIC_MELODY : CLASSIC_MELODY;
+
+        if (bgmStep % 4 === 0) {
+          const chordIdx = Math.floor(bgmStep / 4) % chords.length;
+          chords[chordIdx].forEach(note => {
+            playBgmNote(note, isCouple ? 2.1 : 1.5, isCouple ? 'sine' : 'triangle', 0.016);
+          });
+        }
+        const leadNote = melody[bgmStep % melody.length];
+        if (leadNote > 0) {
+          playBgmNote(leadNote, isCouple ? 0.65 : 0.36, isCouple ? 'triangle' : 'sine', 0.022);
+        }
+        bgmStep++;
+      }, tempoMs);
+    }
+
+    function ensureAudioStarted() {
+      if (!audioCtx) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (!bgmTimer && bgmEnabled) startBgmLoop();
+    }
+
+    ['click', 'touchstart'].forEach(evt => {
+      window.addEventListener(evt, () => ensureAudioStarted(), { once: true });
+    });
+
+    function toggleBgm() {
+      bgmEnabled = !bgmEnabled;
+      if (bgmEnabled) {
+        ensureAudioStarted();
+        startBgmLoop();
+      } else if (bgmTimer) {
+        clearInterval(bgmTimer);
+        bgmTimer = null;
+      }
+      updateAudioButtons();
+    }
+
+    function toggleSound() {
+      soundEnabled = !soundEnabled;
+      ensureAudioStarted();
+      updateAudioButtons();
+    }
+
+    function updateAudioButtons() {
+      const setupBgmBtn = document.getElementById('setupBgmBtn');
+      const bgmBtn = document.getElementById('bgmBtn');
+      const soundBtn = document.getElementById('soundBtn');
+
+      setupBgmBtn.innerHTML = bgmEnabled ? '🎵 BGM: ON' : '🔇 BGM: OFF';
+      setupBgmBtn.classList.toggle('active-audio', bgmEnabled);
+
+      bgmBtn.innerHTML = bgmEnabled ? '🎵 Musik' : '🔇 Musik';
+      bgmBtn.classList.toggle('active-audio', bgmEnabled);
+
+      soundBtn.innerHTML = soundEnabled ? '🔊 SFX' : '🔇 SFX';
+      soundBtn.classList.toggle('active-audio', soundEnabled);
+    }
+
+    function playTone(freq, type = 'sine', duration = 0.12, delay = 0) {
+      if (!audioCtx || !soundEnabled) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime + delay);
+      gain.gain.setValueAtTime(0.08, audioCtx.currentTime + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + delay + duration);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(audioCtx.currentTime + delay);
+      osc.stop(audioCtx.currentTime + delay + duration);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedName = localStorage.getItem('gasbro_player_name');
+      if (savedName) charConfigs.online.name = savedName;
+
+      renderCharacterBuilders();
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const inviteRoom = urlParams.get('room');
+      if (inviteRoom) {
+        selectPlayType('online');
+        document.getElementById('joinCodeInput').value = inviteRoom.toUpperCase();
+      }
+    });
+
+    function selectPlayType(type) {
+      playType = type;
+      document.getElementById('tabLocal').classList.toggle('active', type === 'local');
+      document.getElementById('tabOnline').classList.toggle('active', type === 'online');
+
+      document.getElementById('localInputs').style.display = type === 'local' ? 'flex' : 'none';
+      document.getElementById('onlineBox').style.display = type === 'online' ? 'flex' : 'none';
+
+      const startBtn = document.getElementById('startBtn');
+      if (type === 'local') {
+        startBtn.disabled = false;
+        startBtn.innerHTML = 'Mulai Permainan 🚀';
+      } else {
+        startBtn.disabled = !(mySeat === 0 && guestReady);
+        startBtn.innerHTML = mySeat === 0
+          ? (guestReady ? 'Mulai Game Berdua 🚀' : 'Menunggu Pasangan Masuk Room...')
+          : 'Menunggu Host Memulai Game...';
+      }
+    }
+
+    function selectMode(mode) {
+      gameMode = mode;
+      const btnCouple = document.getElementById('btnModeCouple');
+      const btnClassic = document.getElementById('btnModeClassic');
+      const coupleOpts = document.getElementById('coupleOptions');
+
+      if (mode === 'couple') {
+        btnCouple.classList.add('active-couple');
+        btnClassic.classList.remove('active-classic');
+        coupleOpts.style.display = 'flex';
+      } else {
+        btnClassic.classList.add('active-classic');
+        btnCouple.classList.remove('active-couple');
+        coupleOpts.style.display = 'none';
+      }
+      if (bgmEnabled) startBgmLoop();
+    }
+
     function generateCode() {
       const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
       let out = '';
@@ -1099,6 +1331,7 @@
     function createOnlineRoom() {
       const myName = charConfigs.online.name.trim();
       if (!myName) { alert('Isi nama panggilan kamu dulu ya!'); return; }
+      if (!window.Peer) { alert('Library koneksi sedang dimuat, coba klik lagi sebentar.'); return; }
       localStorage.setItem('gasbro_player_name', myName);
 
       if (peerInstance) peerInstance.destroy();
@@ -1136,15 +1369,16 @@
       });
 
       peerInstance.on('error', (err) => {
-        statusEl.textContent = 'Gagal terhubung';
+        statusEl.textContent = 'Gagal membuat room';
         statusEl.style.color = '#fb7185';
-        alert('Koneksi room bermasalah: ' + err.type + '. Coba klik Buat Room Baru lagi.');
+        alert('Koneksi room bermasalah (' + err.type + '). Silakan klik Buat Room Baru lagi.');
       });
     }
 
     function joinOnlineRoom() {
       const myName = charConfigs.online.name.trim();
       if (!myName) { alert('Isi nama panggilan kamu dulu ya!'); return; }
+      if (!window.Peer) { alert('Library koneksi sedang dimuat, coba klik lagi sebentar.'); return; }
       const code = document.getElementById('joinCodeInput').value.trim().toUpperCase();
       if (code.length < 4) { alert('Masukkan kode room dari pasanganmu.'); return; }
       localStorage.setItem('gasbro_player_name', myName);
@@ -1213,13 +1447,15 @@
       }
     }
 
-    function copyRoomCode() {
+    function copyRoomLink() {
       if (!roomCode) return;
-      navigator.clipboard.writeText(roomCode);
+      const baseUrl = window.location.origin + window.location.pathname;
+      const inviteUrl = `${baseUrl}?room=${roomCode}`;
+      navigator.clipboard.writeText(inviteUrl).catch(() => navigator.clipboard.writeText(roomCode));
       const pill = document.getElementById('displayRoomCode');
       const old = pill.textContent;
-      pill.textContent = 'TERSALIN!';
-      setTimeout(() => { pill.textContent = old; }, 1100);
+      pill.textContent = 'LINK TERSALIN!';
+      setTimeout(() => { pill.textContent = old; }, 1200);
     }
 
     function handleStartClick() {
@@ -1250,12 +1486,12 @@
         hostProfile.avatarUrl = charConfigs.online.avatarUrl || '';
 
         sendNetEvent('game_started', {
-            gameMode,
-            enableCards,
-            enableLoveTiles,
-            p1: hostProfile,
-            p2: guestProfile
-          });
+          gameMode,
+          enableCards,
+          enableLoveTiles,
+          p1: hostProfile,
+          p2: guestProfile
+        });
         launchBoard(hostProfile, guestProfile);
       }
     }
@@ -1272,7 +1508,7 @@
 
       document.getElementById('setupScreen').style.display = 'none';
       document.getElementById('gameScreen').style.display = 'grid';
-      document.getElementById('activeModeBadge').innerHTML = gameMode === 'couple' ? '&#128145; MODE PASANGAN' : '&#127922; MODE KLASIK';
+      document.getElementById('activeModeBadge').innerHTML = gameMode === 'couple' ? '💑 MODE PASANGAN' : '🎲 MODE KLASIK';
 
       const roomTagBtn = document.getElementById('roomTagBtn');
       if (playType === 'online') {
@@ -1305,9 +1541,7 @@
       const rowFromBottom = Math.floor(zeroBased / 10);
       const rowFromTop = 9 - rowFromBottom;
       let col = zeroBased % 10;
-      if (rowFromBottom % 2 === 1) {
-        col = 9 - col;
-      }
+      if (rowFromBottom % 2 === 1) col = 9 - col;
       return { row: rowFromTop, col };
     }
 
@@ -1332,11 +1566,9 @@
 
           if (cellNum === 1) cell.classList.add('cell-start');
           if (cellNum === 100) cell.classList.add('cell-finish');
-          if (enableLoveTiles && LOVE_TILES.includes(cellNum)) {
-            cell.classList.add('cell-bonus');
-          }
+          if (enableLoveTiles && LOVE_TILES.includes(cellNum)) cell.classList.add('cell-bonus');
 
-          cell.innerHTML = cellNum === 100 ? '&#128081; 100' : String(cellNum);
+          cell.innerHTML = cellNum === 100 ? '👑 100' : String(cellNum);
           grid.appendChild(cell);
         }
       }
@@ -1447,6 +1679,7 @@
       const p = players[idx];
       const coords = getCellCoords(p.pos);
       const token = document.getElementById(`token-${idx}`);
+      if (!token) return;
       const sameCell = players[0].pos === players[1].pos;
       const shiftX = sameCell ? (idx === 0 ? -1.6 : 1.6) : 0;
       const shiftY = sameCell ? (idx === 0 ? -1.2 : 1.2) : 0;
@@ -1487,7 +1720,7 @@
 
       const rollBtn = document.getElementById('rollBtn');
       rollBtn.disabled = isBusy || gameEnded || !isMyTurn;
-      rollBtn.innerHTML = isMyTurn ? '&#127922; Kocok Dadu' : `&#9203; Giliran ${activeP.name}`;
+      rollBtn.innerHTML = isMyTurn ? '🎲 Kocok Dadu' : `⏳ Giliran ${activeP.name}`;
     }
 
     const DICE_MAP = {
@@ -1545,7 +1778,6 @@
       const snakePromptIdx = getNextPromptIndex('snake');
 
       sendNetEvent('dice_rolled', { roll, ladderPromptIdx, snakePromptIdx });
-
       await executeTurnSequence(roll, ladderPromptIdx, snakePromptIdx);
     }
 
@@ -1589,7 +1821,7 @@
 
       if (enableLoveTiles && LOVE_TILES.includes(p.pos)) {
         const bonusPos = Math.min(100, p.pos + 2);
-        addLog(`&#128150; <strong>Kotak Cinta!</strong> ${p.name} maju bonus +2 langkah ke <strong>${bonusPos}</strong>.`);
+        addLog(`💖 <strong>Kotak Cinta!</strong> ${p.name} maju bonus +2 langkah ke <strong>${bonusPos}</strong>.`);
         playTone(660, 'sine', 0.12);
         playTone(880, 'sine', 0.18, 0.1);
         await sleep(300);
@@ -1602,7 +1834,7 @@
 
       if (LADDERS[p.pos]) {
         const dest = LADDERS[p.pos];
-        addLog(`&#129692; <strong>Naik Tangga!</strong> ${p.name} melesat dari ${p.pos} ke <strong>${dest}</strong>.`);
+        addLog(`🪜 <strong>Naik Tangga!</strong> ${p.name} melesat dari ${p.pos} ke <strong>${dest}</strong>.`);
         playTone(523, 'triangle', 0.12);
         playTone(659, 'triangle', 0.12, 0.1);
         playTone(784, 'triangle', 0.18, 0.2);
@@ -1614,11 +1846,11 @@
 
         if (enableCards) {
           const prompt = COUPLE_LADDER_PROMPTS[ladderPromptIdx % COUPLE_LADDER_PROMPTS.length];
-          triggeredCard = { emoji: '&#129692;&#128150;', tag: 'BONUS TANGGA PASANGAN', title: `Untuk ${p.name}`, body: prompt };
+          triggeredCard = { emoji: '🪜💖', tag: 'BONUS TANGGA PASANGAN', title: `Untuk ${p.name}`, body: prompt };
         }
       } else if (SNAKES[p.pos]) {
         const dest = SNAKES[p.pos];
-        addLog(`&#128013; <strong>Tergigit Ular!</strong> ${p.name} turun dari ${p.pos} ke <strong>${dest}</strong>.`);
+        addLog(`🐍 <strong>Tergigit Ular!</strong> ${p.name} turun dari ${p.pos} ke <strong>${dest}</strong>.`);
         playTone(360, 'sawtooth', 0.14);
         playTone(240, 'sawtooth', 0.22, 0.12);
         await sleep(350);
@@ -1629,7 +1861,7 @@
 
         if (enableCards) {
           const prompt = COUPLE_SNAKE_PROMPTS[snakePromptIdx % COUPLE_SNAKE_PROMPTS.length];
-          triggeredCard = { emoji: '&#128013;&#128140;', tag: 'TANTANGAN ULAR PASANGAN', title: `Hukuman Manis ${p.name}`, body: prompt };
+          triggeredCard = { emoji: '🐍💌', tag: 'TANTANGAN ULAR PASANGAN', title: `Hukuman Manis ${p.name}`, body: prompt };
         }
       }
 
@@ -1649,7 +1881,7 @@
 
     function endTurn(roll) {
       if (roll === 6) {
-        addLog(`&#128293; Dapat angka <strong>6</strong>! <strong>${players[currentPlayerIdx].name}</strong> mendapat bonus kocok lagi.`);
+        addLog(`🔥 Dapat angka <strong>6</strong>! <strong>${players[currentPlayerIdx].name}</strong> mendapat bonus kocok lagi.`);
       } else {
         currentPlayerIdx = (currentPlayerIdx + 1) % players.length;
       }
@@ -1667,20 +1899,20 @@
       playTone(1046, 'sine', 0.35, 0.36);
 
       const rewardMsg = gameMode === 'couple'
-        ? `Selamat <strong>${winner.name}</strong>! Sebagai pemenang, kamu berhak mengajukan 1 permintaan manis ke pasanganmu hari ini &#128150;`
+        ? `Selamat <strong>${winner.name}</strong>! Sebagai pemenang, kamu berhak mengajukan 1 permintaan manis ke pasanganmu hari ini 💖`
         : `Selamat <strong>${winner.name}</strong> berhasil mencapai kotak 100 lebih dulu!`;
 
-      showModal('&#127942;', 'PEMENANG PERMAINAN', `${winner.icon} ${winner.name} Menang!`, rewardMsg, () => {
+      showModal('🏆', 'PEMENANG PERMAINAN', `${winner.icon} ${winner.name} Menang!`, rewardMsg, () => {
         sendNetEvent('rematch', {});
         launchBoard(
           { name: players[0].name, icon: players[0].icon, color: players[0].color, avatarUrl: players[0].avatarUrl },
           { name: players[1].name, icon: players[1].icon, color: players[1].color, avatarUrl: players[1].avatarUrl }
         );
-      }, 'Main Lagi &#128260;');
+      }, 'Main Lagi 🔄');
     }
 
     let modalCallback = null;
-    function showModal(emoji, tag, title, body, onClose, btnLabel = 'Selesai &amp; Lanjut &#10024;') {
+    function showModal(emoji, tag, title, body, onClose, btnLabel = 'Selesai & Lanjut ✨') {
       document.getElementById('modalEmoji').innerHTML = emoji;
       document.getElementById('modalTag').textContent = tag;
       document.getElementById('modalTitle').textContent = title;
@@ -1692,19 +1924,19 @@
 
     function closeModal(fromRemote = false) {
       document.getElementById('modalBackdrop').style.display = 'none';
-      if (!fromRemote && !gameEnded) { sendNetEvent('modal_closed', {}); }
+      if (!fromRemote && !gameEnded) {
+        sendNetEvent('modal_closed', {});
+      }
       if (modalCallback) {
         const cb = modalCallback;
         modalCallback = null;
         cb();
       }
     }
-  </script>
-  <script>
+
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
     }
   </script>
 </body>
 </html>
-
