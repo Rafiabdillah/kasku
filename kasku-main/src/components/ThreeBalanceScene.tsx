@@ -1,1301 +1,681 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { ChevronDown, ChevronUp, Maximize2, Minimize2, RotateCcw } from 'lucide-react';
-import { formatRupiahTitle } from '../core/format';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { Maximize2, Minimize2, RotateCcw, Eye, EyeOff, ArrowUpRight } from 'lucide-react';
+import { formatRupiahInput } from '../core/format';
 
-export interface ThreeSceneMetrics {
-  kasBalance: number;
-  bankBalance: number;
-  ewalletBalance: number;
-  totalAssets: number;
-  totalDebt: number;
-  totalEquity: number;
+export interface ThreeBalanceSceneProps {
+  kas: number;
+  bank: number;
+  ewallet: number;
+  piutang: number;
+  utang: number;
+  modalAwal: number;
   monthlyNet: number;
+  onNavigate?: (tab: 'catat' | 'buku' | 'hutang') => void;
 }
 
-interface ThreeBalanceSceneProps {
-  metrics: ThreeSceneMetrics;
-  fullScreen?: boolean;
-  onToggleFullScreen?: () => void;
-}
+type CameraPreset = 'isometric' | 'neraca' | 'dompet' | 'buku';
 
-type CameraPresetKey = 'isometrik' | 'timbangan' | 'dompet' | 'buku';
-
-const CAMERA_PRESETS: Record<
-  CameraPresetKey,
-  { label: string; pos: [number, number, number]; target: [number, number, number] }
-> = {
-  isometrik: { label: 'Isometrik', pos: [4.85, 3.65, 5.75], target: [0.18, 0.72, 0.05] },
-  timbangan: { label: 'Neraca', pos: [0.2, 2.35, 5.4], target: [-0.6, 1.4, 0] },
-  dompet: { label: 'Dompet', pos: [-2.9, 2.5, 3.1], target: [-1.45, 0.95, 0] },
-  buku: { label: 'Buku Kas', pos: [2.8, 2.2, 3.0], target: [1.32, 0.3, 0.1] },
-};
-
-type InspectedPartKey = 'aset' | 'pasiva' | 'buku' | 'laba' | null;
-
-const PART_DETAILS: Record<
-  Exclude<InspectedPartKey, null>,
-  {
-    title: string;
-    subtitle: string;
-    preset: CameraPresetKey;
-  }
-> = {
-  aset: {
-    title: 'Piringan Kiri Â· Aset & Likuiditas',
-    subtitle: 'Tumpukan koin Kas (Hijau), Bank (Emas), dan E-Wallet (Teal)',
-    preset: 'dompet',
-  },
-  pasiva: {
-    title: 'Piringan Kanan Â· Kewajiban & Ekuitas',
-    subtitle: 'Anak timbangan Kuningan (Modal) & Perunggu (Utang Aktif)',
-    preset: 'timbangan',
-  },
-  buku: {
-    title: 'Kitab Jurnal Umum Â· BukuKu',
-    subtitle: 'Catatan pembukuan berpasangan (Debit = Kredit) terenkripsi',
-    preset: 'buku',
-  },
-  laba: {
-    title: 'Wadah Tinta & Pena Â· Arus Kas Bulan Ini',
-    subtitle: 'Indikator kinerja laba/rugi bersih pada periode berjalan',
-    preset: 'buku',
-  },
-};
-
-function detectSoftwareWebGL(): boolean {
-  try {
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl2') as WebGL2RenderingContext | null;
-    if (!gl) return true;
-    const ext = gl.getExtension('WEBGL_debug_renderer_info');
-    const param = ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER;
-    const gpu = String(gl.getParameter(param) ?? '');
-    gl.getExtension('WEBGL_lose_context')?.loseContext();
-    return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
-  } catch {
-    return true;
-  }
-}
-
-function createContactShadowTexture(): THREE.CanvasTexture {
-  const size = 128;
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-  const grad = ctx.createRadialGradient(size / 2, size / 2, 4, size / 2, size / 2, size / 2);
-  grad.addColorStop(0, 'rgba(20, 18, 15, 0.52)');
-  grad.addColorStop(0.55, 'rgba(20, 18, 15, 0.2)');
-  grad.addColorStop(1, 'rgba(20, 18, 15, 0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, size, size);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-function createLedgerCoverTexture(maxAniso: number): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d')!;
-
-  // Rich forest ledger leather base
-  ctx.fillStyle = '#14532d';
-  ctx.fillRect(0, 0, 512, 512);
-
-  // Subtle leather grain noise
-  for (let i = 0; i < 4500; i++) {
-    const x = (i * 73) % 512;
-    const y = ((i * 137) % 512);
-    ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.06)';
-    ctx.fillRect(x, y, 2, 2);
-  }
-
-  // Gold foil border
-  ctx.strokeStyle = '#d4af37';
-  ctx.lineWidth = 6;
-  ctx.strokeRect(36, 36, 440, 440);
-  ctx.lineWidth = 2;
-  ctx.strokeRect(48, 48, 416, 416);
-
-  // Gold embossed Indonesian title
-  ctx.fillStyle = '#f3d97d';
-  ctx.font = 'bold 54px Georgia, serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('BUKUKU', 256, 200);
-
-  ctx.font = 'bold 20px Georgia, serif';
-  ctx.fillStyle = '#e5c158';
-  ctx.fillText('TATA BUKU & JURNAL', 256, 245);
-
-  ctx.strokeStyle = '#d4af37';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(150, 270);
-  ctx.lineTo(362, 270);
-  ctx.stroke();
-
-  ctx.font = '18px monospace';
-  ctx.fillStyle = '#d8e9dc';
-  ctx.fillText('DEBIT  |  KREDIT', 256, 315);
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = maxAniso;
-  return tex;
-}
-
-function createPaperLinesTexture(maxAniso: number): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#f4efe2';
-  ctx.fillRect(0, 0, 256, 256);
-  ctx.strokeStyle = '#cfc7b4';
-  ctx.lineWidth = 1;
-  for (let y = 12; y < 256; y += 12) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(256, y);
-    ctx.stroke();
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = maxAniso;
-  return tex;
-}
-
-function createWoodGrainBump(maxAniso: number): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#808080';
-  ctx.fillRect(0, 0, 256, 256);
-  for (let y = 0; y < 256; y += 3) {
-    const shade = 110 + Math.round(Math.sin(y * 0.22) * 24);
-    ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
-    ctx.fillRect(0, y, 256, 2);
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.anisotropy = maxAniso;
-  return tex;
+interface CalloutPin {
+  id: 'aset' | 'pasiva' | 'buku' | 'tinta';
+  title: string;
+  value: string;
+  subtitle: string;
+  actionLabel: string;
+  targetTab: 'catat' | 'buku' | 'hutang';
+  worldPos: THREE.Vector3;
 }
 
 export function ThreeBalanceScene({
-  metrics,
-  fullScreen = false,
-  onToggleFullScreen,
+  kas,
+  bank,
+  ewallet,
+  piutang,
+  utang,
+  modalAwal,
+  monthlyNet,
+  onNavigate,
 }: ThreeBalanceSceneProps) {
-  const mountRef = useRef<HTMLDivElement | null>(null);
-  const metricsRef = useRef<ThreeSceneMetrics>(metrics);
-  metricsRef.current = metrics;
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
 
-  const [preset, setPreset] = useState<CameraPresetKey>('isometrik');
-  const [explodeLevel, setExplodeLevel] = useState<number>(0);
-  const [dockCollapsed, setDockCollapsed] = useState<boolean>(false);
-  const [contextLost, setContextLost] = useState<boolean>(false);
-  const [renderFailed, setRenderFailed] = useState<boolean>(false);
-  const [inspectedPart, setInspectedPart] = useState<InspectedPartKey>(null);
-  const [hoveredPart, setHoveredPart] = useState<InspectedPartKey>(null);
+  const [preset, setPreset] = useState<CameraPreset>('isometric');
+  const [explodeRatio, setExplodeRatio] = useState<number>(0);
+  const [showControls, setShowControls] = useState<boolean>(true);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [selectedPin, setSelectedPin] = useState<CalloutPin['id'] | null>(null);
+  const [pinCoords, setPinCoords] = useState<Record<string, { x: number; y: number; visible: boolean }>>({});
 
-  const explodeTargetRef = useRef<number>(0);
-  explodeTargetRef.current = explodeLevel;
-
-  const presetHandlerRef = useRef<((key: CameraPresetKey) => void) | null>(null);
-  const syncDataRef = useRef<(() => void) | null>(null);
+  // Refs untuk nilai dinamis di dalam render loop tanpa re-init Three.js
+  const stateRef = useRef({
+    kas,
+    bank,
+    ewallet,
+    piutang,
+    utang,
+    modalAwal,
+    monthlyNet,
+    preset,
+    explodeRatio,
+  });
 
   useEffect(() => {
-    syncDataRef.current?.();
-  }, [metrics]);
+    stateRef.current = {
+      kas,
+      bank,
+      ewallet,
+      piutang,
+      utang,
+      modalAwal,
+      monthlyNet,
+      preset,
+      explodeRatio,
+    };
+  }, [kas, bank, ewallet, piutang, utang, modalAwal, monthlyNet, preset, explodeRatio]);
 
-  useEffect(() => {
-    const container = mountRef.current;
-    if (!container) return;
+  const totalAset = Math.max(0, kas + bank + ewallet + piutang);
+  const totalPasiva = Math.max(0, modalAwal + utang + monthlyNet);
 
-    const isSoftwareGl = detectSoftwareWebGL();
-    const width = container.clientWidth || 800;
-    const height = container.clientHeight || 420;
+  const callouts: CalloutPin[] = [
+    {
+      id: 'aset',
+      title: 'Piringan Aset & Likuiditas',
+      value: `Rp${formatRupiahInput(totalAset)}`,
+      subtitle: `Kas Rp${formatRupiahInput(kas)} · Bank Rp${formatRupiahInput(bank)}`,
+      actionLabel: 'Catat Pemasukan',
+      targetTab: 'catat',
+      worldPos: new THREE.Vector3(-1.45, 1.55, 0),
+    },
+    {
+      id: 'pasiva',
+      title: 'Piringan Kewajiban & Ekuitas',
+      value: `Rp${formatRupiahInput(totalPasiva)}`,
+      subtitle: `Utang Aktif Rp${formatRupiahInput(utang)}`,
+      actionLabel: 'Kelola Utang',
+      targetTab: 'hutang',
+      worldPos: new THREE.Vector3(1.45, 1.55, 0),
+    },
+    {
+      id: 'buku',
+      title: 'Kitab Jurnal Double-Entry',
+      value: 'Debit = Kredit',
+      subtitle: 'Catatan mutasi buku besar aktif',
+      actionLabel: 'Buka Buku Besar',
+      targetTab: 'buku',
+      worldPos: new THREE.Vector3(0.95, 0.35, 1.25),
+    },
+    {
+      id: 'tinta',
+      title: 'Indikator Laba / Rugi Bulan Ini',
+      value: `${monthlyNet >= 0 ? '+' : '-'}Rp${formatRupiahInput(Math.abs(monthlyNet))}`,
+      subtitle: monthlyNet >= 0 ? 'Status: Surplus (Hijau Zamrud)' : 'Status: Defisit (Merah Marun)',
+      actionLabel: 'Lihat Laporan',
+      targetTab: 'buku',
+      worldPos: new THREE.Vector3(1.45, 0.65, 0.65),
+    },
+  ];
 
-    const scene = new THREE.Scene();
-    const bgColor = new THREE.Color('#EFECE5');
-    scene.background = bgColor;
-    scene.fog = new THREE.FogExp2(0xefece5, 0.032);
-
-    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 60);
-    camera.position.set(...CAMERA_PRESETS.isometrik.pos);
-
-    let renderer: THREE.WebGLRenderer;
-    try {
-      renderer = new THREE.WebGLRenderer({
-        antialias: !isSoftwareGl,
-        powerPreference: 'high-performance',
-      });
-    } catch {
-      setRenderFailed(true);
-      return;
+  // Toggle Fullscreen
+  const toggleFullscreen = async () => {
+    if (!containerRef.current) return;
+    if (!document.fullscreenElement) {
+      await containerRef.current.requestFullscreen().catch(() => {});
+      setIsFullscreen(true);
+    } else {
+      await document.exitFullscreen().catch(() => {});
+      setIsFullscreen(false);
     }
+  };
+
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  useEffect(() => {
+    const wrapper = canvasWrapperRef.current;
+    if (!wrapper) return;
+
+    const width = wrapper.clientWidth || 600;
+    const height = wrapper.clientHeight || 380;
+
+    // 1. Scene, Camera, Renderer
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#F5F2EB');
+
+    const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
+    camera.position.set(0, 3.3, 6.2);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
-    renderer.shadowMap.enabled = !isSoftwareGl;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    wrapper.innerHTML = '';
+    wrapper.appendChild(renderer.domElement);
 
-    const handleContextLost = (e: Event) => {
-      e.preventDefault();
-      setContextLost(true);
-    };
-    const handleContextRestored = () => {
-      setContextLost(false);
-    };
-    renderer.domElement.addEventListener('webglcontextlost', handleContextLost);
-    renderer.domElement.addEventListener('webglcontextrestored', handleContextRestored);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.maxPolarAngle = Math.PI / 2 - 0.06;
+    controls.minDistance = 2.8;
+    controls.maxDistance = 10.5;
+    controls.target.set(0, 0.95, 0);
 
-    container.innerHTML = '';
-    renderer.domElement.style.display = 'block';
-    renderer.domElement.style.width = '100%';
-    renderer.domElement.style.height = '100%';
-    container.appendChild(renderer.domElement);
+    // 2. Pencahayaan Studio Hangat
+    const ambientLight = new THREE.AmbientLight('#FFFDF9', 1.35);
+    scene.add(ambientLight);
 
-    const pmremGenerator = new THREE.PMREMGenerator(renderer);
-    const roomEnv = new RoomEnvironment();
-    const envTex = pmremGenerator.fromScene(roomEnv, 0.04).texture;
-    scene.environment = envTex;
-    roomEnv.dispose();
-    pmremGenerator.dispose();
+    const dirLight = new THREE.DirectionalLight('#FFF7E6', 1.9);
+    dirLight.position.set(4.5, 7.5, 5.0);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(1024, 1024);
+    dirLight.shadow.camera.near = 1;
+    dirLight.shadow.camera.far = 18;
+    const d = 4.5;
+    dirLight.shadow.camera.left = -d;
+    dirLight.shadow.camera.right = d;
+    dirLight.shadow.camera.top = d;
+    dirLight.shadow.camera.bottom = -d;
+    dirLight.shadow.bias = -0.0005;
+    scene.add(dirLight);
 
-    const maxAniso = renderer.capabilities.getMaxAnisotropy();
-
-    // Three-point warm/cool studio lighting rig
-    const hemiLight = new THREE.HemisphereLight(0xdbeafe, 0xb8a88a, 0.85);
-    scene.add(hemiLight);
-
-    const keyLight = new THREE.DirectionalLight(0xfff1db, 2.2);
-    keyLight.position.set(5.5, 8.5, 4.5);
-    keyLight.castShadow = !isSoftwareGl;
-    keyLight.shadow.mapSize.width = 1024;
-    keyLight.shadow.mapSize.height = 1024;
-    keyLight.shadow.camera.near = 1;
-    keyLight.shadow.camera.far = 22;
-    keyLight.shadow.camera.left = -5.5;
-    keyLight.shadow.camera.right = 5.5;
-    keyLight.shadow.camera.top = 5.5;
-    keyLight.shadow.camera.bottom = -5.5;
-    keyLight.shadow.bias = -0.0005;
-    keyLight.shadow.normalBias = 0.02;
-    scene.add(keyLight);
-
-    const rimLight = new THREE.DirectionalLight(0xd9e8ff, 0.9);
-    rimLight.position.set(-5, 4.5, -5);
+    const rimLight = new THREE.DirectionalLight('#D1FAE5', 0.55);
+    rimLight.position.set(-4, 3, -4);
     scene.add(rimLight);
 
-    // Materials library (distinct roughness >= 0.25 delta between adjacent surfaces)
-    const woodBump = createWoodGrainBump(maxAniso);
-    const coverTex = createLedgerCoverTexture(maxAniso);
-    const paperTex = createPaperLinesTexture(maxAniso);
-    const shadowTex = createContactShadowTexture();
+    // 3. Alas Meja & Lingkaran Dekoratif
+    const deskGeo = new THREE.CircleGeometry(4.6, 64);
+    const deskMat = new THREE.MeshStandardMaterial({ color: '#FAF8F3', roughness: 0.9 });
+    const deskMesh = new THREE.Mesh(deskGeo, deskMat);
+    deskMesh.rotation.x = -Math.PI / 2;
+    deskMesh.receiveShadow = true;
+    scene.add(deskMesh);
 
-    const travertineMat = new THREE.MeshStandardMaterial({
-      color: 0xe6e1d6,
-      roughness: 0.86,
-      metalness: 0.02,
-      bumpMap: woodBump,
-      bumpScale: 0.005,
-    });
-    const mahoganyMat = new THREE.MeshStandardMaterial({
-      color: 0x4b2919,
-      roughness: 0.72,
-      metalness: 0.06,
-      bumpMap: woodBump,
-      bumpScale: 0.015,
-    });
-    const brassMat = new THREE.MeshPhysicalMaterial({
-      color: 0xd4a948,
-      roughness: 0.2,
-      metalness: 0.92,
-      clearcoat: 0.35,
-      clearcoatRoughness: 0.2,
-    });
-    const darkBronzeMat = new THREE.MeshStandardMaterial({
-      color: 0x5c4727,
-      roughness: 0.38,
-      metalness: 0.82,
-    });
-    const leatherCoverMat = new THREE.MeshStandardMaterial({
-      map: coverTex,
-      roughness: 0.78,
-      metalness: 0.05,
-    });
-    const spineLeatherMat = new THREE.MeshStandardMaterial({
-      color: 0x114424,
-      roughness: 0.74,
-      metalness: 0.05,
-    });
-    const paperBlockMat = new THREE.MeshStandardMaterial({
-      map: paperTex,
-      roughness: 0.9,
-      metalness: 0.0,
-    });
-    const silkRibbonMat = new THREE.MeshStandardMaterial({
-      color: 0x991b1b,
-      roughness: 0.65,
-      metalness: 0.05,
-    });
-    const inkwellGlassMat = new THREE.MeshPhysicalMaterial({
-      color: 0x1e293b,
-      roughness: 0.14,
-      metalness: 0.1,
-      clearcoat: 1.0,
-      clearcoatRoughness: 0.08,
-    });
-    const kasCoinMat = new THREE.MeshStandardMaterial({
-      color: 0x15803d,
-      roughness: 0.26,
-      metalness: 0.76,
-    });
-    const bankCoinMat = new THREE.MeshStandardMaterial({
-      color: 0xd97706,
-      roughness: 0.22,
-      metalness: 0.9,
-    });
-    const ewalletCoinMat = new THREE.MeshStandardMaterial({
-      color: 0x0f766e,
+    const ringGeo = new THREE.RingGeometry(3.35, 3.41, 64);
+    const ringMat = new THREE.MeshBasicMaterial({ color: '#D6C7A9', side: THREE.DoubleSide });
+    const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+    ringMesh.rotation.x = -Math.PI / 2;
+    ringMesh.position.y = 0.005;
+    scene.add(ringMesh);
+
+    // Material Kuningan & Kayu
+    const brassMat = new THREE.MeshStandardMaterial({
+      color: '#D4AF37',
+      metalness: 0.78,
       roughness: 0.24,
-      metalness: 0.82,
     });
-    const shadowPlaneMat = new THREE.MeshBasicMaterial({
-      map: shadowTex,
-      transparent: true,
-      opacity: 0.45,
-      depthWrite: false,
+    const darkBrassMat = new THREE.MeshStandardMaterial({
+      color: '#856514',
+      metalness: 0.75,
+      roughness: 0.35,
+    });
+    const woodMat = new THREE.MeshStandardMaterial({
+      color: '#7C5845',
+      roughness: 0.65,
     });
 
-    const disposables: Array<{ dispose: () => void }> = [
-      woodBump,
-      coverTex,
-      paperTex,
-      shadowTex,
-      travertineMat,
-      mahoganyMat,
-      brassMat,
-      darkBronzeMat,
-      leatherCoverMat,
-      spineLeatherMat,
-      paperBlockMat,
-      silkRibbonMat,
-      inkwellGlassMat,
-      kasCoinMat,
-      bankCoinMat,
-      ewalletCoinMat,
-      shadowPlaneMat,
-    ];
-
-    // 1. Ground Studio Plinth
-    const floorGroup = new THREE.Group();
-    const plinthGeo = new THREE.CylinderGeometry(5.2, 5.4, 0.22, 48);
-    disposables.push(plinthGeo);
-    const plinthMesh = new THREE.Mesh(plinthGeo, travertineMat);
-    plinthMesh.position.y = -0.11;
-    plinthMesh.receiveShadow = true;
-    floorGroup.add(plinthMesh);
-
-    const floorRingGeo = new THREE.RingGeometry(4.95, 5.02, 48);
-    disposables.push(floorRingGeo);
-    const ringMat = new THREE.MeshStandardMaterial({
-      color: 0xb89648,
-      roughness: 0.28,
-      metalness: 0.85,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
-    });
-    disposables.push(ringMat);
-    const floorRing = new THREE.Mesh(floorRingGeo, ringMat);
-    floorRing.rotation.x = -Math.PI / 2;
-    floorRing.position.y = 0.005;
-    floorGroup.add(floorRing);
-    scene.add(floorGroup);
-
-    // 2. Composite Scale Monument Group (Timbangan Neraca Klasik)
+    // 4. Grup Utama Timbangan Neraca
     const scaleRoot = new THREE.Group();
-    scaleRoot.position.set(-0.65, 0, 0);
     scene.add(scaleRoot);
 
-    const scaleShadowGeo = new THREE.CircleGeometry(1.45, 32);
-    disposables.push(scaleShadowGeo);
-    const scaleShadow = new THREE.Mesh(scaleShadowGeo, shadowPlaneMat);
-    scaleShadow.rotation.x = -Math.PI / 2;
-    scaleShadow.position.set(0, 0.015, 0);
-    scaleRoot.add(scaleShadow);
-
-    // Octagonal beveled mahogany base
-    const baseShape = new THREE.Shape();
-    const octR = 0.92;
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
-      const x = Math.cos(a) * octR;
-      const y = Math.sin(a) * octR;
-      if (i === 0) baseShape.moveTo(x, y);
-      else baseShape.lineTo(x, y);
-    }
-    baseShape.closePath();
-    const baseGeo = new THREE.ExtrudeGeometry(baseShape, {
-      depth: 0.16,
-      bevelEnabled: true,
-      bevelThickness: 0.04,
-      bevelSize: 0.04,
-      bevelSegments: 2,
-    });
-    baseGeo.rotateX(-Math.PI / 2);
-    disposables.push(baseGeo);
-    const baseMesh = new THREE.Mesh(baseGeo, mahoganyMat);
-    baseMesh.position.y = 0.04;
+    // Alas Kayu Segi Delapan
+    const baseMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.88, 0.22, 8), woodMat);
+    baseMesh.position.y = 0.11;
     baseMesh.castShadow = true;
     baseMesh.receiveShadow = true;
     scaleRoot.add(baseMesh);
 
-    // Stepped upper brass collar + fluted central column (LatheGeometry)
-    const columnPts = [
-      new THREE.Vector2(0.0, 0.0),
-      new THREE.Vector2(0.46, 0.0),
-      new THREE.Vector2(0.42, 0.08),
-      new THREE.Vector2(0.24, 0.14),
-      new THREE.Vector2(0.14, 0.28),
-      new THREE.Vector2(0.11, 0.95),
-      new THREE.Vector2(0.16, 1.05),
-      new THREE.Vector2(0.09, 1.15),
-      new THREE.Vector2(0.08, 1.85),
-      new THREE.Vector2(0.15, 1.94),
-      new THREE.Vector2(0.06, 2.08),
-      new THREE.Vector2(0.0, 2.15),
-    ];
-    const columnGeo = new THREE.LatheGeometry(columnPts, 24);
-    disposables.push(columnGeo);
-    const columnMesh = new THREE.Mesh(columnGeo, brassMat);
-    columnMesh.position.y = 0.22;
-    columnMesh.castShadow = true;
-    scaleRoot.add(columnMesh);
+    // Tiang Tengah
+    const pillarGroup = new THREE.Group();
+    scaleRoot.add(pillarGroup);
 
-    // Decorative fulcrum housing & pointer dial
-    const dialGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.08, 24);
-    dialGeo.rotateX(Math.PI / 2);
-    disposables.push(dialGeo);
-    const dialMesh = new THREE.Mesh(dialGeo, darkBronzeMat);
-    dialMesh.position.set(0, 2.1, 0.04);
-    scaleRoot.add(dialMesh);
+    const pillarCollar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.42, 0.16, 24), brassMat);
+    pillarCollar.position.y = 0.28;
+    pillarCollar.castShadow = true;
+    pillarGroup.add(pillarCollar);
 
-    // Pivoting Balance Beam Group
-    const beamPivot = new THREE.Group();
-    beamPivot.position.set(0, 2.1, 0);
-    scaleRoot.add(beamPivot);
+    const pillarShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.14, 1.95, 20), brassMat);
+    pillarShaft.position.y = 1.25;
+    pillarShaft.castShadow = true;
+    pillarGroup.add(pillarShaft);
 
-    const beamShape = new THREE.Shape();
-    beamShape.moveTo(-1.32, 0.02);
-    beamShape.lineTo(-0.22, 0.1);
-    beamShape.lineTo(0, 0.14);
-    beamShape.lineTo(0.22, 0.1);
-    beamShape.lineTo(1.32, 0.02);
-    beamShape.lineTo(1.32, -0.04);
-    beamShape.lineTo(0.22, -0.05);
-    beamShape.lineTo(0, -0.08);
-    beamShape.lineTo(-0.22, -0.05);
-    beamShape.lineTo(-1.32, -0.04);
-    beamShape.closePath();
+    const finial = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.32, 16), brassMat);
+    finial.position.y = 2.36;
+    pillarGroup.add(finial);
 
-    const beamGeo = new THREE.ExtrudeGeometry(beamShape, {
-      depth: 0.07,
-      bevelEnabled: true,
-      bevelThickness: 0.015,
-      bevelSize: 0.015,
-      bevelSegments: 2,
-    });
-    beamGeo.translate(0, 0, -0.035);
-    disposables.push(beamGeo);
-    const beamMesh = new THREE.Mesh(beamGeo, brassMat);
-    beamMesh.castShadow = true;
-    beamPivot.add(beamMesh);
+    // Lengan Timbangan (Beam) & Jarum Indikator
+    const beamGroup = new THREE.Group();
+    beamGroup.position.set(0, 2.08, 0);
+    scaleRoot.add(beamGroup);
 
-    // Center needle pointer
-    const needleGeo = new THREE.ConeGeometry(0.03, 0.38, 12);
-    disposables.push(needleGeo);
-    const needleMesh = new THREE.Mesh(needleGeo, darkBronzeMat);
-    needleMesh.position.set(0, 0.24, 0.04);
-    beamPivot.add(needleMesh);
+    const beamBar = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.08, 0.09), brassMat);
+    beamBar.castShadow = true;
+    beamGroup.add(beamBar);
 
-    // Helper to build suspension cradle + concave pan with exact vector-aligned rods
-    const rodUnitGeo = new THREE.CylinderGeometry(0.011, 0.011, 1, 8);
-    const panPts = [
-      new THREE.Vector2(0.0, -0.04),
-      new THREE.Vector2(0.45, -0.03),
-      new THREE.Vector2(0.62, 0.03),
-      new THREE.Vector2(0.64, 0.06),
-      new THREE.Vector2(0.59, 0.06),
-      new THREE.Vector2(0.42, 0.0),
-      new THREE.Vector2(0.0, 0.0),
-    ];
-    const panGeo = new THREE.LatheGeometry(panPts, 28);
-    const ringHookGeo = new THREE.TorusGeometry(0.05, 0.015, 8, 16);
-    disposables.push(rodUnitGeo, panGeo, ringHookGeo);
+    const pivotHub = new THREE.Mesh(new THREE.SphereGeometry(0.15, 20, 20), darkBrassMat);
+    beamGroup.add(pivotHub);
 
-    const upVec = new THREE.Vector3(0, 1, 0);
-    const hookAnchor = new THREE.Vector3(0, -0.05, 0);
+    const needle = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.42, 12), darkBrassMat);
+    needle.position.y = 0.24;
+    beamGroup.add(needle);
 
-    function createPanAssembly(xOffset: number): THREE.Group {
+    // Piringan Kiri (Aset) & Piringan Kanan (Pasiva)
+    const createPanAssembly = () => {
       const panGroup = new THREE.Group();
-      panGroup.position.set(xOffset, 0, 0);
 
-      const hook = new THREE.Mesh(ringHookGeo, brassMat);
-      hook.position.set(0, -0.04, 0);
-      panGroup.add(hook);
-
+      // 3 Tali Gantung
       for (let i = 0; i < 3; i++) {
-        const angle = (i / 3) * Math.PI * 2;
-        const rimAnchor = new THREE.Vector3(
-          Math.cos(angle) * 0.58,
-          -0.95,
-          Math.sin(angle) * 0.58,
-        );
-        const dir = rimAnchor.clone().sub(hookAnchor);
-        const len = dir.length();
-        const mid = hookAnchor.clone().add(rimAnchor).multiplyScalar(0.5);
-
-        const rod = new THREE.Mesh(rodUnitGeo, darkBronzeMat);
-        rod.position.copy(mid);
-        rod.scale.set(1, len, 1);
-        rod.quaternion.setFromUnitVectors(upVec, dir.normalize());
-        panGroup.add(rod);
+        const angle = (i * Math.PI * 2) / 3;
+        const wireGeo = new THREE.CylinderGeometry(0.01, 0.01, 1.12, 8);
+        const wire = new THREE.Mesh(wireGeo, darkBrassMat);
+        wire.position.set(Math.cos(angle) * 0.28, -0.52, Math.sin(angle) * 0.28);
+        wire.lookAt(0, 0, 0);
+        wire.rotateX(Math.PI / 2);
+        panGroup.add(wire);
       }
 
-      const pan = new THREE.Mesh(panGeo, brassMat);
-      pan.position.set(0, -1.0, 0);
-      pan.castShadow = true;
-      pan.receiveShadow = true;
-      panGroup.add(pan);
+      // Piringan Datar
+      const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.52, 0.06, 32), brassMat);
+      dish.position.y = -1.06;
+      dish.castShadow = true;
+      dish.receiveShadow = true;
+      panGroup.add(dish);
 
       return panGroup;
-    }
+    };
 
-    const leftPan = createPanAssembly(-1.25);
-    const rightPan = createPanAssembly(1.25);
-    beamPivot.add(leftPan);
-    beamPivot.add(rightPan);
+    const leftPan = createPanAssembly();
+    leftPan.position.set(-1.45, 0, 0);
+    beamGroup.add(leftPan);
 
-    // Left Pan Dynamic Coin Stacks (Kas, Bank, E-Wallet)
-    const coinGeo = new THREE.CylinderGeometry(0.13, 0.13, 0.04, 20);
-    disposables.push(coinGeo);
+    const rightPan = createPanAssembly();
+    rightPan.position.set(1.45, 0, 0);
+    beamGroup.add(rightPan);
 
-    // InstancedMesh pool for crisp zero-allocation coin rendering (up to 33 coins)
-    const MAX_COINS = 33;
-    const coinBaseMat = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.23,
-      metalness: 0.84,
-    });
-    disposables.push(coinBaseMat);
-    const coinInstanced = new THREE.InstancedMesh(coinGeo, coinBaseMat, MAX_COINS);
+    // 5. InstancedMesh Tumpukan Koin di Piringan Kiri (Kas, Bank, E-Wallet)
+    const MAX_COINS = 36;
+    const coinGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.036, 20);
+    const coinMat = new THREE.MeshStandardMaterial({ metalness: 0.55, roughness: 0.3 });
+    const coinInstanced = new THREE.InstancedMesh(coinGeo, coinMat, MAX_COINS);
     coinInstanced.castShadow = true;
     coinInstanced.receiveShadow = true;
-    coinInstanced.position.set(0, -0.99, 0);
-    coinInstanced.userData.partKey = 'aset';
     leftPan.add(coinInstanced);
-    leftPan.traverse((obj) => {
-      obj.userData.partKey = 'aset';
-    });
 
-    // Right Pan Dynamic Weights (Modal & Utang)
-    const weightPts = [
-      new THREE.Vector2(0, 0),
-      new THREE.Vector2(0.18, 0),
-      new THREE.Vector2(0.16, 0.04),
-      new THREE.Vector2(0.14, 0.22),
-      new THREE.Vector2(0.08, 0.26),
-      new THREE.Vector2(0.11, 0.33),
-      new THREE.Vector2(0.0, 0.35),
-    ];
-    const weightGeo = new THREE.LatheGeometry(weightPts, 20);
-    disposables.push(weightGeo);
+    // Anak Timbangan di Piringan Kanan (Modal & Utang)
+    const equityWeight = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 0.36, 20), brassMat);
+    equityWeight.position.set(-0.14, -0.86, 0);
+    equityWeight.castShadow = true;
+    rightPan.add(equityWeight);
 
-    const rightWeightsGroup = new THREE.Group();
-    rightWeightsGroup.position.set(0, -0.99, 0);
-    rightPan.add(rightWeightsGroup);
-
-    const modalWeight = new THREE.Mesh(weightGeo, brassMat);
-    modalWeight.position.set(-0.14, 0, 0.06);
-    modalWeight.castShadow = true;
-    rightWeightsGroup.add(modalWeight);
-
-    const debtWeight = new THREE.Mesh(weightGeo, darkBronzeMat);
-    debtWeight.position.set(0.18, 0, -0.08);
+    const debtWeight = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.24, 18), darkBrassMat);
+    debtWeight.position.set(0.24, -0.92, 0.12);
     debtWeight.castShadow = true;
-    rightWeightsGroup.add(debtWeight);
+    rightPan.add(debtWeight);
 
-    rightPan.traverse((obj) => {
-      obj.userData.partKey = 'pasiva';
-    });
-
-    // 3. Bound Ledger Book ("BukuKu" Group)
+    // 6. Kitab BukuKu 3D & Wadah Tinta Laba/Rugi
     const bookGroup = new THREE.Group();
-    bookGroup.position.set(1.32, 0, 0.08);
+    bookGroup.position.set(0.95, 0.08, 1.25);
     bookGroup.rotation.y = -0.35;
     scene.add(bookGroup);
 
-    const bookShadowGeo = new THREE.CircleGeometry(1.15, 28);
-    disposables.push(bookShadowGeo);
-    const bookShadow = new THREE.Mesh(bookShadowGeo, shadowPlaneMat);
-    bookShadow.rotation.x = -Math.PI / 2;
-    bookShadow.position.set(0, 0.015, 0);
-    bookGroup.add(bookShadow);
+    const coverMat = new THREE.MeshStandardMaterial({ color: '#14532D', roughness: 0.55 });
+    const pageMat = new THREE.MeshStandardMaterial({ color: '#FAF8F3', roughness: 0.85 });
 
-    const bottomBoardGeo = new THREE.BoxGeometry(1.22, 0.05, 1.56);
-    const pagesBlockGeo = new THREE.BoxGeometry(1.12, 0.22, 1.46);
-    const topBoardGeo = new THREE.BoxGeometry(1.22, 0.05, 1.56);
-    const spineGeo = new THREE.CylinderGeometry(0.16, 0.16, 1.56, 16, 1, false, Math.PI / 2, Math.PI);
-    spineGeo.rotateX(Math.PI / 2);
-    const cornerGuardGeo = new THREE.BoxGeometry(0.12, 0.07, 0.12);
-    const ribbonGeo = new THREE.BoxGeometry(0.06, 0.015, 0.42);
-    disposables.push(
-      bottomBoardGeo,
-      pagesBlockGeo,
-      topBoardGeo,
-      spineGeo,
-      cornerGuardGeo,
-      ribbonGeo,
+    const bookCover = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.16, 0.85), coverMat);
+    bookCover.castShadow = true;
+    bookCover.receiveShadow = true;
+    bookGroup.add(bookCover);
+
+    const bookPages = new THREE.Mesh(new THREE.BoxGeometry(1.08, 0.12, 0.78), pageMat);
+    bookPages.position.x = 0.02;
+    bookGroup.add(bookPages);
+
+    const ribbon = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.02, 0.28),
+      new THREE.MeshStandardMaterial({ color: '#DC2626' })
     );
-
-    const bottomBoard = new THREE.Mesh(bottomBoardGeo, spineLeatherMat);
-    bottomBoard.position.set(0, 0.025, 0);
-    bottomBoard.castShadow = true;
-    bottomBoard.receiveShadow = true;
-    bookGroup.add(bottomBoard);
-
-    const pagesBlock = new THREE.Mesh(pagesBlockGeo, paperBlockMat);
-    pagesBlock.position.set(0.03, 0.16, 0);
-    pagesBlock.castShadow = true;
-    bookGroup.add(pagesBlock);
-
-    const topBoard = new THREE.Mesh(topBoardGeo, [
-      spineLeatherMat,
-      spineLeatherMat,
-      leatherCoverMat,
-      spineLeatherMat,
-      spineLeatherMat,
-      spineLeatherMat,
-    ]);
-    topBoard.position.set(0, 0.295, 0);
-    topBoard.castShadow = true;
-    bookGroup.add(topBoard);
-
-    const spineMesh = new THREE.Mesh(spineGeo, spineLeatherMat);
-    spineMesh.position.set(-0.56, 0.16, 0);
-    spineMesh.castShadow = true;
-    bookGroup.add(spineMesh);
-
-    const corners: Array<[number, number]> = [
-      [0.57, 0.74],
-      [0.57, -0.74],
-    ];
-    for (const [cx, cz] of corners) {
-      const corner = new THREE.Mesh(cornerGuardGeo, brassMat);
-      corner.position.set(cx, 0.3, cz);
-      bookGroup.add(corner);
-    }
-
-    const ribbon = new THREE.Mesh(ribbonGeo, silkRibbonMat);
-    ribbon.position.set(0.18, 0.04, 0.9);
-    ribbon.rotation.y = 0.12;
+    ribbon.position.set(0.18, -0.06, 0.48);
     bookGroup.add(ribbon);
 
-    bookGroup.traverse((obj) => {
-      obj.userData.partKey = 'buku';
-    });
+    // Wadah Tinta (Inkwell)
+    const inkwellGroup = new THREE.Group();
+    inkwellGroup.position.set(1.45, 0.14, 0.65);
+    scene.add(inkwellGroup);
 
-    // 4. Inkwell (with dynamic monthlyNet ink level) & Brass Fountain Pen Group
-    const deskSetGroup = new THREE.Group();
-    deskSetGroup.position.set(1.25, 0, -1.05);
-    scene.add(deskSetGroup);
+    const inkGlass = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.16, 0.22, 0.28, 20),
+      new THREE.MeshStandardMaterial({
+        color: '#334155',
+        metalness: 0.3,
+        roughness: 0.2,
+        transparent: true,
+        opacity: 0.82,
+      })
+    );
+    inkGlass.castShadow = true;
+    inkwellGroup.add(inkGlass);
 
-    const inkPts = [
-      new THREE.Vector2(0, 0),
-      new THREE.Vector2(0.24, 0),
-      new THREE.Vector2(0.26, 0.14),
-      new THREE.Vector2(0.14, 0.28),
-      new THREE.Vector2(0.14, 0.36),
-      new THREE.Vector2(0.17, 0.38),
-      new THREE.Vector2(0, 0.38),
-    ];
-    const inkGeo = new THREE.LatheGeometry(inkPts, 20);
-    const inkLiquidGeo = new THREE.CylinderGeometry(0.14, 0.19, 0.16, 20);
     const inkLiquidMat = new THREE.MeshStandardMaterial({
-      color: 0x15803d,
-      emissive: 0x14532d,
-      emissiveIntensity: 0.35,
-      roughness: 0.15,
-      metalness: 0.1,
+      color: '#10B981',
+      emissive: '#059669',
+      emissiveIntensity: 0.45,
+      roughness: 0.2,
     });
-    const penPts = [
-      new THREE.Vector2(0, 0),
-      new THREE.Vector2(0.015, 0.08),
-      new THREE.Vector2(0.045, 0.24),
-      new THREE.Vector2(0.045, 0.85),
-      new THREE.Vector2(0.025, 0.98),
-      new THREE.Vector2(0, 1.0),
-    ];
-    const penGeo = new THREE.LatheGeometry(penPts, 14);
-    disposables.push(inkGeo, inkLiquidGeo, inkLiquidMat, penGeo);
+    const inkLiquid = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.16, 18), inkLiquidMat);
+    inkLiquid.position.y = -0.04;
+    inkwellGroup.add(inkLiquid);
 
-    const inkwell = new THREE.Mesh(inkGeo, inkwellGlassMat);
-    inkwell.castShadow = true;
-    deskSetGroup.add(inkwell);
+    // 7. Variabel Fisika Pegas Teredam (Damped Harmonic Spring)
+    let currentAngle = 0;
+    let angularVelocity = 0;
+    const stiffness = 28.0;
+    const damping = 5.2;
 
-    const inkLiquidMesh = new THREE.Mesh(inkLiquidGeo, inkLiquidMat);
-    inkLiquidMesh.position.set(0, 0.1, 0);
-    deskSetGroup.add(inkLiquidMesh);
+    const dummy = new THREE.Object3D();
+    const colorKas = new THREE.Color('#15803D');
+    const colorBank = new THREE.Color('#D97706');
+    const colorEwallet = new THREE.Color('#0D9488');
 
-    const penMesh = new THREE.Mesh(penGeo, brassMat);
-    penMesh.position.set(-0.2, 0.045, 0.38);
-    penMesh.rotation.set(Math.PI / 2, 0, 0.55);
-    penMesh.castShadow = true;
-    deskSetGroup.add(penMesh);
+    const cameraGoals: Record<CameraPreset, { pos: [number, number, number]; target: [number, number, number] }> = {
+      isometric: { pos: [0, 3.3, 6.2], target: [0, 0.95, 0] },
+      neraca: { pos: [0, 2.35, 5.1], target: [0, 1.35, 0] },
+      dompet: { pos: [-2.4, 2.55, 3.6], target: [-1.35, 1.15, 0] },
+      buku: { pos: [2.3, 2.2, 3.8], target: [1.05, 0.35, 1.05] },
+    };
 
-    deskSetGroup.traverse((obj) => {
-      obj.userData.partKey = 'laba';
-    });
+    let prevPreset: CameraPreset = stateRef.current.preset;
+    let frameId = 0;
+    let lastTime = performance.now();
+    let frameCounter = 0;
 
-    // Dynamic update helper for InstancedMesh coin stacks, inkwell indicator & beam target tilt
-    let targetBeamTilt = 0;
-    const dummyMatrix = new THREE.Matrix4();
-    const dummyPos = new THREE.Vector3();
-    const dummyQuat = new THREE.Quaternion();
-    const dummyScale = new THREE.Vector3(1, 1, 1);
-    const kasColor = new THREE.Color(0x15803d);
-    const bankColor = new THREE.Color(0xd97706);
-    const ewalletColor = new THREE.Color(0x0f766e);
+    // 8. Render Loop Utama
+    const animate = (now: number) => {
+      frameId = requestAnimationFrame(animate);
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
 
-    function rebuildCoinsForMetrics() {
-      const m = metricsRef.current;
-      const maxWallet = Math.max(m.kasBalance, m.bankBalance, m.ewalletBalance, 1);
+      const s = stateRef.current;
 
-      const stacks = [
-        { val: m.kasBalance, x: -0.22, z: 0.14, color: kasColor },
-        { val: m.bankBalance, x: 0.04, z: -0.18, color: bankColor },
-        { val: m.ewalletBalance, x: 0.24, z: 0.12, color: ewalletColor },
+      // Hitung target kemiringan timbangan berdasarkan selisih aset & pasiva
+      const asetVal = Math.max(0, s.kas + s.bank + s.ewallet + s.piutang);
+      const pasivaVal = Math.max(0, s.modalAwal + s.utang + s.monthlyNet);
+      const diffRatio =
+        asetVal + pasivaVal > 0 ? (asetVal - pasivaVal) / Math.max(asetVal, pasivaVal, 1) : 0;
+      const targetAngle = THREE.MathUtils.clamp(diffRatio * 0.24, -0.24, 0.24);
+
+      // Integrasi Fisika Pegas Teredam
+      const springForce = (targetAngle - currentAngle) * stiffness;
+      const dampingForce = -angularVelocity * damping;
+      angularVelocity += (springForce + dampingForce) * dt;
+      currentAngle += angularVelocity * dt;
+
+      beamGroup.rotation.z = currentAngle;
+      // Piringan tetap tegak lurus terhadap gravitasi (counter-rotate)
+      leftPan.rotation.z = -currentAngle;
+      rightPan.rotation.z = -currentAngle;
+
+      // Efek Mode Bedah 3D (Explode View)
+      const exp = s.explodeRatio;
+      beamGroup.position.y = 2.08 + exp * 0.45;
+      leftPan.position.x = -1.45 - exp * 0.35;
+      rightPan.position.x = 1.45 + exp * 0.35;
+      bookGroup.position.set(0.95 + exp * 0.35, 0.08 + exp * 0.2, 1.25 + exp * 0.35);
+      inkwellGroup.position.set(1.45 + exp * 0.45, 0.14 + exp * 0.25, 0.65 + exp * 0.15);
+
+      // Update Tumpukan Koin (InstancedMesh)
+      const unitScale = Math.max(asetVal / 12, 50000);
+      const kasCount = Math.min(12, s.kas > 0 ? Math.max(1, Math.round(s.kas / unitScale)) : 0);
+      const bankCount = Math.min(12, s.bank > 0 ? Math.max(1, Math.round(s.bank / unitScale)) : 0);
+      const ewalletCount = Math.min(12, s.ewallet > 0 ? Math.max(1, Math.round(s.ewallet / unitScale)) : 0);
+
+      let idx = 0;
+      const stackConfigs = [
+        { count: kasCount, x: -0.2, z: 0.05, color: colorKas },
+        { count: bankCount, x: 0.15, z: -0.1, color: colorBank },
+        { count: ewalletCount, x: 0.12, z: 0.2, color: colorEwallet },
       ];
 
-      let instanceIdx = 0;
-      for (const st of stacks) {
-        const count = Math.max(1, Math.min(11, Math.round((Math.max(0, st.val) / maxWallet) * 10) + 1));
-        for (let i = 0; i < count && instanceIdx < MAX_COINS; i++) {
-          dummyPos.set(st.x, 0.025 + i * 0.042, st.z);
-          dummyQuat.setFromAxisAngle(upVec, ((i * 0.45) + st.x * 3) % (Math.PI * 2));
-          dummyMatrix.compose(dummyPos, dummyQuat, dummyScale);
-          coinInstanced.setMatrixAt(instanceIdx, dummyMatrix);
-          coinInstanced.setColorAt(instanceIdx, st.color);
-          instanceIdx++;
+      for (const stack of stackConfigs) {
+        for (let c = 0; c < stack.count && idx < MAX_COINS; c++) {
+          dummy.position.set(stack.x, -1.01 + c * 0.038, stack.z);
+          dummy.scale.set(1, 1, 1);
+          dummy.updateMatrix();
+          coinInstanced.setMatrixAt(idx, dummy.matrix);
+          coinInstanced.setColorAt(idx, stack.color);
+          idx++;
         }
       }
-      coinInstanced.count = instanceIdx;
+      for (; idx < MAX_COINS; idx++) {
+        dummy.position.set(0, -10, 0);
+        dummy.scale.set(0, 0, 0);
+        dummy.updateMatrix();
+        coinInstanced.setMatrixAt(idx, dummy.matrix);
+      }
       coinInstanced.instanceMatrix.needsUpdate = true;
       if (coinInstanced.instanceColor) coinInstanced.instanceColor.needsUpdate = true;
 
-      // Update inkwell liquid indicator from monthlyNet (emerald surplus vs crimson deficit)
-      if (m.monthlyNet >= 0) {
-        inkLiquidMat.color.setHex(0x15803d);
-        inkLiquidMat.emissive.setHex(0x14532d);
-        const ratio = Math.min(1.35, 0.65 + (m.monthlyNet / Math.max(1, m.totalAssets)) * 1.4);
-        inkLiquidMesh.scale.set(1, ratio, 1);
+      // Skala Anak Timbangan Kanan (Modal vs Utang)
+      const eqScale = s.modalAwal > 0 ? THREE.MathUtils.clamp(0.8 + s.modalAwal / 5000000, 0.8, 1.45) : 0.85;
+      equityWeight.scale.set(eqScale, eqScale, eqScale);
+      const debtScale = s.utang > 0 ? THREE.MathUtils.clamp(0.7 + s.utang / 2000000, 0.7, 1.45) : 0.65;
+      debtWeight.scale.set(debtScale, debtScale, debtScale);
+
+      // Warna Tinta Laba / Rugi
+      if (s.monthlyNet >= 0) {
+        inkLiquidMat.color.set('#10B981');
+        inkLiquidMat.emissive.set('#059669');
       } else {
-        inkLiquidMat.color.setHex(0xb91c1c);
-        inkLiquidMat.emissive.setHex(0x7f1d1d);
-        inkLiquidMesh.scale.set(1, 0.45, 1);
+        inkLiquidMat.color.set('#E11D48');
+        inkLiquidMat.emissive.set('#9F1239');
       }
 
-      // Scale weights cleanly from equity & debt
-      const totalRight = Math.max(1, m.totalEquity + m.totalDebt);
-      const modalRatio = Math.max(0.55, Math.min(1.45, (m.totalEquity / totalRight) * 1.4));
-      const debtRatio = Math.max(0.4, Math.min(1.3, (m.totalDebt / totalRight) * 1.6 + 0.4));
-      modalWeight.scale.setScalar(modalRatio);
-      debtWeight.scale.setScalar(debtRatio);
-
-      // Gentle accounting balance needle tilt (balanced = level 0; surplus tilts slightly left)
-      const diffRatio = (m.totalAssets - (m.totalEquity + m.totalDebt)) / Math.max(1, m.totalAssets);
-      targetBeamTilt = THREE.MathUtils.clamp(diffRatio * 0.22, -0.12, 0.12);
-    }
-
-    rebuildCoinsForMetrics();
-
-    // OrbitControls + damped camera transitions
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = !isSoftwareGl;
-    controls.dampingFactor = 0.06;
-    controls.minDistance = 2.4;
-    controls.maxDistance = 12;
-    controls.maxPolarAngle = Math.PI / 2 - 0.04;
-    controls.target.set(...CAMERA_PRESETS.isometrik.target);
-
-    let camAnimating = false;
-    let desiredCamPos = new THREE.Vector3(...CAMERA_PRESETS.isometrik.pos);
-    let desiredTarget = new THREE.Vector3(...CAMERA_PRESETS.isometrik.target);
-
-    let currentExplode = 0;
-    let currentTilt = 0;
-
-    // Coalesced on-demand renderer + software WebGL afterDraw pacing
-    let frameId = 0;
-    let renderBusy = false;
-    let renderDirty = false;
-    let lastTime = performance.now();
-    let disposed = false;
-
-    function afterDraw(cb: () => void) {
-      const gl = renderer.getContext() as WebGL2RenderingContext;
-      const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
-      gl.flush();
-      const poll = () => {
-        if (disposed) return;
-        const state = sync && gl.getSyncParameter(sync, gl.SYNC_STATUS);
-        if (state === gl.UNSIGNALED) {
-          frameId = window.setTimeout(poll, 5);
-        } else {
-          if (sync) gl.deleteSync(sync);
-          frameId = window.setTimeout(cb, 80);
-        }
-      };
-      frameId = window.setTimeout(poll, 5);
-    }
-
-    function requestRender() {
-      if (disposed) return;
-      if (renderBusy) {
-        renderDirty = true;
-        return;
+      // Transisi Kamera Preset Halus
+      if (s.preset !== prevPreset) {
+        prevPreset = s.preset;
       }
-      renderBusy = true;
-      frameId = requestAnimationFrame((now) => {
-        if (disposed) return;
-        renderDirty = false;
-        const dt = Math.min(0.1, Math.max(0.001, (now - lastTime) / 1000));
-        lastTime = now;
+      const goal = cameraGoals[s.preset];
+      camera.position.lerp(new THREE.Vector3(...goal.pos), 0.04);
+      controls.target.lerp(new THREE.Vector3(...goal.target), 0.05);
+      controls.update();
 
-        // Exponential damping for camera presets
-        if (camAnimating) {
-          const factor = 1 - Math.exp(-7 * dt);
-          camera.position.lerp(desiredCamPos, factor);
-          controls.target.lerp(desiredTarget, factor);
-          if (
-            camera.position.distanceTo(desiredCamPos) < 0.015 &&
-            controls.target.distanceTo(desiredTarget) < 0.015
-          ) {
-            camera.position.copy(desiredCamPos);
-            controls.target.copy(desiredTarget);
-            camAnimating = false;
-          } else {
-            renderDirty = true;
-          }
+      renderer.render(scene, camera);
+
+      // Proyeksi Koordinat Label 3D Mengambang setiap 3 frame agar hemat CPU
+      frameCounter++;
+      if (frameCounter % 3 === 0 && wrapper) {
+        const w = wrapper.clientWidth;
+        const h = wrapper.clientHeight;
+        const nextCoords: Record<string, { x: number; y: number; visible: boolean }> = {};
+
+        for (const pin of callouts) {
+          const projected = pin.worldPos.clone().project(camera);
+          const x = (projected.x * 0.5 + 0.5) * w;
+          const y = (-(projected.y * 0.5) + 0.5) * h;
+          const visible = projected.z < 1 && x >= 16 && x <= w - 16 && y >= 16 && y <= h - 16;
+          nextCoords[pin.id] = { x, y, visible };
         }
-
-        // Exponential damping for beam tilt & exploded view
-        const targetExp = explodeTargetRef.current;
-        if (Math.abs(currentExplode - targetExp) > 0.002) {
-          currentExplode = THREE.MathUtils.damp(currentExplode, targetExp, 7, dt);
-          renderDirty = true;
-        } else {
-          currentExplode = targetExp;
-        }
-
-        if (Math.abs(currentTilt - targetBeamTilt) > 0.001) {
-          currentTilt = THREE.MathUtils.damp(currentTilt, targetBeamTilt, 6, dt);
-          renderDirty = true;
-        } else {
-          currentTilt = targetBeamTilt;
-        }
-
-        // Apply exploded offsets cleanly
-        beamPivot.position.y = 2.1 + currentExplode * 0.55;
-        beamPivot.rotation.z = currentTilt;
-        leftPan.rotation.z = -currentTilt;
-        rightPan.rotation.z = -currentTilt;
-        topBoard.position.y = 0.295 + currentExplode * 0.42;
-        pagesBlock.position.y = 0.16 + currentExplode * 0.18;
-
-        controls.update();
-        renderer.render(scene, camera);
-
-        const done = () => {
-          renderBusy = false;
-          if (renderDirty) requestRender();
-        };
-        if (isSoftwareGl) afterDraw(done);
-        else done();
-      });
-    }
-
-    const onControlStart = () => {
-      camAnimating = false;
-      requestRender();
-    };
-    const onControlChange = () => {
-      requestRender();
-    };
-    controls.addEventListener('start', onControlStart);
-    controls.addEventListener('change', onControlChange);
-
-    presetHandlerRef.current = (key: CameraPresetKey) => {
-      const p = CAMERA_PRESETS[key];
-      desiredCamPos.set(...p.pos);
-      desiredTarget.set(...p.target);
-      camAnimating = true;
-      requestRender();
-    };
-
-    syncDataRef.current = () => {
-      rebuildCoinsForMetrics();
-      requestRender();
-    };
-
-    if (!isSoftwareGl) {
-      renderer.compile(scene, camera);
-    }
-
-    // Interactive raycasting for clicking/hovering 3D accounting monuments
-    const raycaster = new THREE.Raycaster();
-    const pointerNdc = new THREE.Vector2();
-    const interactiveRoots: THREE.Object3D[] = [leftPan, rightPan, bookGroup, deskSetGroup];
-    let pointerDownPos = { x: 0, y: 0 };
-
-    function pickPart(clientX: number, clientY: number): InspectedPartKey {
-      const rect = renderer.domElement.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return null;
-      pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-      pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(pointerNdc, camera);
-      const hits = raycaster.intersectObjects(interactiveRoots, true);
-      if (hits.length === 0) return null;
-      let cur: THREE.Object3D | null = hits[0].object;
-      while (cur) {
-        const key = cur.userData?.partKey as InspectedPartKey | undefined;
-        if (key) return key;
-        cur = cur.parent;
-      }
-      return null;
-    }
-
-    const onPointerMove = (e: PointerEvent) => {
-      if (isSoftwareGl || e.buttons !== 0) return;
-      const hit = pickPart(e.clientX, e.clientY);
-      renderer.domElement.style.cursor = hit ? 'pointer' : 'grab';
-      setHoveredPart((prev) => (prev === hit ? prev : hit));
-    };
-
-    const onPointerDown = (e: PointerEvent) => {
-      pointerDownPos = { x: e.clientX, y: e.clientY };
-      renderer.domElement.style.cursor = 'grabbing';
-    };
-
-    const onPointerUp = (e: PointerEvent) => {
-      const moved = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
-      const hit = pickPart(e.clientX, e.clientY);
-      renderer.domElement.style.cursor = hit ? 'pointer' : 'grab';
-      if (moved < 6) {
-        if (hit) {
-          setInspectedPart(hit);
-          const targetPreset = PART_DETAILS[hit].preset;
-          setPreset(targetPreset);
-          presetHandlerRef.current?.(targetPreset);
-        } else {
-          setInspectedPart(null);
-        }
+        setPinCoords(nextCoords);
       }
     };
 
-    renderer.domElement.style.cursor = 'grab';
-    renderer.domElement.addEventListener('pointermove', onPointerMove);
-    renderer.domElement.addEventListener('pointerdown', onPointerDown);
-    renderer.domElement.addEventListener('pointerup', onPointerUp);
+    frameId = requestAnimationFrame(animate);
 
-    // Initial render
-    requestRender();
-
-    const onResize = () => {
-      if (!container || disposed) return;
-      const w = container.clientWidth || 800;
-      const h = container.clientHeight || 420;
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
-      requestRender();
-    };
-    const ro = new ResizeObserver(onResize);
-    ro.observe(container);
+    // Resize Observer Responsif
+    const resizeObserver = new ResizeObserver(() => {
+      if (!wrapper) return;
+      const newW = wrapper.clientWidth;
+      const newH = wrapper.clientHeight;
+      if (newW > 0 && newH > 0) {
+        camera.aspect = newW / newH;
+        camera.updateProjectionMatrix();
+        renderer.setSize(newW, newH);
+      }
+    });
+    resizeObserver.observe(wrapper);
 
     return () => {
-      disposed = true;
       cancelAnimationFrame(frameId);
-      clearTimeout(frameId);
-      ro.disconnect();
-      renderer.domElement.removeEventListener('pointermove', onPointerMove);
-      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
-      renderer.domElement.removeEventListener('pointerup', onPointerUp);
-      controls.removeEventListener('start', onControlStart);
-      controls.removeEventListener('change', onControlChange);
+      resizeObserver.disconnect();
       controls.dispose();
-      renderer.domElement.removeEventListener('webglcontextlost', handleContextLost);
-      renderer.domElement.removeEventListener('webglcontextrestored', handleContextRestored);
-      envTex.dispose();
-      disposables.forEach((d) => d.dispose());
       renderer.dispose();
     };
   }, []);
 
-  // Trigger re-render when explode slider changes
-  useEffect(() => {
-    syncDataRef.current?.();
-  }, [explodeLevel]);
-
-  const handleSelectPreset = (key: CameraPresetKey) => {
-    setPreset(key);
-    presetHandlerRef.current?.(key);
-  };
+  const activeCallout = callouts.find((c) => c.id === selectedPin) ?? null;
 
   return (
     <div
-      className={
-        fullScreen
-          ? 'relative w-full h-[calc(100vh-64px)] min-h-[540px] bg-[#EFECE5] overflow-hidden'
-          : 'relative w-full h-[380px] lg:h-[430px] rounded-xl border border-[#E5E2DC] bg-[#EFECE5] overflow-hidden'
-      }
-      data-testid="three-balance-scene"
+      ref={containerRef}
+      className={`relative w-full rounded-2xl border border-[#D6D3CB] bg-[#F5F2EB] overflow-hidden shadow-sm transition-all ${
+        isFullscreen ? 'h-screen rounded-none' : 'h-[380px] sm:h-[430px]'
+      }`}
     >
-      {/* Dedicated isolated WebGL mount container */}
-      <div ref={mountRef} className="w-full h-full" />
-
-      {contextLost && (
-        <div className="absolute inset-0 flex items-center justify-center bg-[#EFECE5] text-[#18181B] p-6 text-center">
-          <div>
-            <p className="font-serif text-lg font-semibold">Visualisasi 3D dijeda sementara</p>
-            <p className="text-sm text-[#57534E] mt-1">
-              Konteks grafis browser sedang dipulihkan.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {renderFailed && (
-        <div className="absolute inset-0 flex items-center justify-center bg-[#EFECE5] p-4">
-          <div className="w-full max-w-md rounded-xl border border-[#D6D3CB] bg-white p-5 space-y-3">
-            <p className="font-serif text-base font-semibold text-[#18181B]">
-              Visualisasi 3D tidak tersedia
-            </p>
-            <p className="text-xs text-[#57534E]">
-              Browser ini tidak mendukung WebGL. Seluruh pencatatan dan laporan tetap berjalan
-              normal.
-            </p>
-            <dl className="grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-lg bg-[#F8F7F4] px-3 py-2">
-                <dt className="text-[#57534E]">Total Aset</dt>
-                <dd className="font-mono font-semibold text-[#14532D] tabular-nums">
-                  {formatRupiahTitle(metrics.totalAssets)}
-                </dd>
-              </div>
-              <div className="rounded-lg bg-[#F8F7F4] px-3 py-2">
-                <dt className="text-[#57534E]">Total Utang</dt>
-                <dd className="font-mono font-semibold text-[#18181B] tabular-nums">
-                  {formatRupiahTitle(metrics.totalDebt)}
-                </dd>
-              </div>
-              <div className="rounded-lg bg-[#F8F7F4] px-3 py-2">
-                <dt className="text-[#57534E]">Total Ekuitas</dt>
-                <dd className="font-mono font-semibold text-[#18181B] tabular-nums">
-                  {formatRupiahTitle(metrics.totalEquity)}
-                </dd>
-              </div>
-              <div className="rounded-lg bg-[#F8F7F4] px-3 py-2">
-                <dt className="text-[#57534E]">Laba Bersih Bulan Ini</dt>
-                <dd
-                  className={`font-mono font-semibold tabular-nums ${
-                    metrics.monthlyNet >= 0 ? 'text-[#14532D]' : 'text-[#B91C1C]'
-                  }`}
-                >
-                  {formatRupiahTitle(metrics.monthlyNet)}
-                </dd>
-              </div>
-            </dl>
-          </div>
-        </div>
-      )}
-
-      {/* Top-Left Minimal Spec Header (solid/rgba surface, no backdrop-filter over WebGL) */}
-      <div className="pointer-events-none absolute top-3 left-3 right-3 flex items-start justify-between gap-3">
-        <div className="pointer-events-auto max-w-[310px] rounded-lg border border-[#D6D3CB] bg-[#FFFFFF]/95 px-3.5 py-2.5 shadow-sm space-y-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-medium text-[#57534E]">
-              {inspectedPart
-                ? PART_DETAILS[inspectedPart].title
-                : hoveredPart
-                  ? PART_DETAILS[hoveredPart].title
-                  : 'Neraca 3D & Buku Kas'}
-            </p>
-            {inspectedPart && (
-              <button
-                type="button"
-                onClick={() => {
-                  setInspectedPart(null);
-                  handleSelectPreset('isometrik');
-                }}
-                className="text-[11px] font-semibold text-[#14532D] hover:underline"
-              >
-                Tutup
-              </button>
-            )}
-          </div>
-          <p className="font-mono text-sm font-semibold text-[#14532D] tabular-nums">
-            Aset {formatRupiahTitle(metrics.totalAssets)}
-          </p>
-          {inspectedPart ? (
-            <div className="pt-1 border-t border-[#E5E2DC] space-y-1 text-xs">
-              <p className="text-[11px] text-[#57534E]">{PART_DETAILS[inspectedPart].subtitle}</p>
-              {inspectedPart === 'aset' && (
-                <dl className="grid grid-cols-3 gap-1 pt-1 font-mono text-[11px]">
-                  <div>
-                    <dt className="text-[#15803D] font-sans font-semibold">Kas</dt>
-                    <dd className="tabular-nums">{formatRupiahTitle(metrics.kasBalance)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[#D97706] font-sans font-semibold">Bank</dt>
-                    <dd className="tabular-nums">{formatRupiahTitle(metrics.bankBalance)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[#0F766E] font-sans font-semibold">E-Wallet</dt>
-                    <dd className="tabular-nums">{formatRupiahTitle(metrics.ewalletBalance)}</dd>
-                  </div>
-                </dl>
-              )}
-              {inspectedPart === 'pasiva' && (
-                <dl className="grid grid-cols-2 gap-2 pt-1 font-mono text-[11px]">
-                  <div>
-                    <dt className="text-[#B45309] font-sans font-semibold">Modal (Ekuitas)</dt>
-                    <dd className="tabular-nums">{formatRupiahTitle(metrics.totalEquity)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[#B91C1C] font-sans font-semibold">Utang Aktif</dt>
-                    <dd className="tabular-nums">{formatRupiahTitle(metrics.totalDebt)}</dd>
-                  </div>
-                </dl>
-              )}
-              {(inspectedPart === 'buku' || inspectedPart === 'laba') && (
-                <dl className="grid grid-cols-2 gap-2 pt-1 font-mono text-[11px]">
-                  <div>
-                    <dt className="text-[#57534E] font-sans font-semibold">Laba Bulan Ini</dt>
-                    <dd
-                      className={`tabular-nums font-semibold ${
-                        metrics.monthlyNet >= 0 ? 'text-[#14532D]' : 'text-[#B91C1C]'
-                      }`}
-                    >
-                      {formatRupiahTitle(metrics.monthlyNet)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[#57534E] font-sans font-semibold">Persamaan Neraca</dt>
-                    <dd className="tabular-nums text-[#14532D] font-semibold">
-                      {metrics.totalAssets === metrics.totalEquity + metrics.totalDebt
-                        ? 'Seimbang'
-                        : 'Selisih'}
-                    </dd>
-                  </div>
-                </dl>
-              )}
-            </div>
-          ) : (
-            <p className="text-[11px] text-[#78716C]">
-              Klik koin, pemberat, kitab, atau tinta pada objek 3D untuk memeriksa rincian angka.
-            </p>
-          )}
-        </div>
-
-        {onToggleFullScreen && (
-          <button
-            type="button"
-            onClick={onToggleFullScreen}
-            aria-label={fullScreen ? 'Kecilkan tampilan 3D' : 'Perluas tampilan 3D'}
-            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-lg border border-[#D6D3CB] bg-[#FFFFFF]/95 px-3 py-2 text-xs font-semibold text-[#18181B] shadow-sm hover:bg-[#F3F1EB] transition-colors whitespace-nowrap shrink-0"
-          >
-            {fullScreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-            <span>{fullScreen ? 'Tutup Layar Penuh' : 'Layar Penuh 3D'}</span>
-          </button>
-        )}
+      {/* Badge Ringkasan Pojok Kiri Atas */}
+      <div className="absolute top-3.5 left-3.5 z-20 rounded-xl border border-[#D6D3CB]/80 bg-white/95 backdrop-blur-sm px-3.5 py-2 shadow-sm">
+        <p className="text-[11px] font-medium text-[#57534E]">Neraca 3D & Buku Kas</p>
+        <p className="font-mono text-sm sm:text-base font-bold text-[#14532D]">
+          Aset Rp{formatRupiahInput(totalAset)}
+        </p>
       </div>
 
-      {/* Collapsible Bottom Control Dock (solid/rgba surface, zero backdrop-blur) */}
-      {!renderFailed && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[min(94%,740px)] flex flex-col items-center">
+      {/* Tombol Layar Penuh Pojok Kanan Atas */}
+      <button
+        type="button"
+        onClick={toggleFullscreen}
+        className="absolute top-3.5 right-3.5 z-20 inline-flex items-center gap-1.5 rounded-xl border border-[#D6D3CB]/80 bg-white/95 backdrop-blur-sm px-3 py-2 text-xs font-semibold text-[#18181B] shadow-sm hover:bg-white transition-colors"
+      >
+        {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+        <span>{isFullscreen ? 'Keluar Layar Penuh' : 'Layar Penuh 3D'}</span>
+      </button>
+
+      {/* Canvas 3D Three.js */}
+      <div ref={canvasWrapperRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+
+      {/* Projected 3D Callout Pins (Label Mengambang Interaktif) */}
+      {callouts.map((pin) => {
+        const pos = pinCoords[pin.id];
+        if (!pos || !pos.visible) return null;
+        const isSelected = selectedPin === pin.id;
+        return (
+          <button
+            key={pin.id}
+            type="button"
+            onClick={() => setSelectedPin(isSelected ? null : pin.id)}
+            style={{ left: `${pos.x}px`, top: `${pos.y}px` }}
+            className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold shadow-md transition-transform hover:scale-105 ${
+              isSelected
+                ? 'bg-[#14532D] text-white ring-2 ring-white'
+                : 'bg-white/90 text-[#18181B] border border-[#D6D3CB]'
+            }`}
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-[#16A34A]" />
+            <span>{pin.id.toUpperCase()}</span>
+          </button>
+        );
+      })}
+
+      {/* Kartu Detail Saat Pin 3D Diklik */}
+      {activeCallout && (
+        <div className="absolute top-16 left-3.5 z-20 w-64 rounded-xl border border-[#D6D3CB] bg-white/95 backdrop-blur-md p-3.5 shadow-lg">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-[11px] font-semibold text-[#57534E]">{activeCallout.title}</p>
+              <p className="font-mono text-sm font-bold text-[#14532D] mt-0.5">{activeCallout.value}</p>
+              <p className="text-[11px] text-[#78716C] mt-1">{activeCallout.subtitle}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedPin(null)}
+              className="text-xs font-bold text-[#78716C] hover:text-[#18181B]"
+            >
+              ✕
+            </button>
+          </div>
+          {onNavigate && (
+            <button
+              type="button"
+              onClick={() => onNavigate(activeCallout.targetTab)}
+              className="mt-2.5 w-full inline-flex items-center justify-center gap-1 rounded-lg bg-[#14532D] py-1.5 text-[11px] font-semibold text-white hover:bg-[#166534]"
+            >
+              <span>{activeCallout.actionLabel}</span>
+              <ArrowUpRight className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Panel Kontrol Bawah */}
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center w-[94%] max-w-xl">
         <button
           type="button"
-          onClick={() => setDockCollapsed((v) => !v)}
-          className="inline-flex items-center gap-1 rounded-t-lg border border-b-0 border-[#D6D3CB] bg-[#FFFFFF]/95 px-3 py-1 text-[11px] font-semibold text-[#57534E] hover:text-[#18181B] transition-colors"
+          onClick={() => setShowControls((v) => !v)}
+          className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-[#D6D3CB] bg-white/95 px-3 py-1 text-[11px] font-semibold text-[#57534E] shadow-sm hover:text-[#18181B]"
         >
-          {dockCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          <span>{dockCollapsed ? 'Tampilkan Kontrol' : 'Sembunyikan Kontrol'}</span>
+          {showControls ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+          <span>{showControls ? 'Sembunyikan Kontrol' : 'Tampilkan Kontrol 3D'}</span>
         </button>
 
-        {!dockCollapsed && (
-          <div className="w-full rounded-xl border border-[#D6D3CB] bg-[#FFFFFF]/95 px-4 py-2.5 shadow-md flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-1 bg-[#F3F1EB] p-1 rounded-lg">
-              {(Object.keys(CAMERA_PRESETS) as CameraPresetKey[]).map((key) => (
+        {showControls && (
+          <div className="w-full flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#D6D3CB] bg-white/95 backdrop-blur-md p-2 shadow-md">
+            {/* Preset Kamera */}
+            <div className="flex items-center gap-1 rounded-xl bg-[#F4EFE2] p-1 text-[11px] font-semibold">
+              {(
+                [
+                  { id: 'isometric', label: 'Isometrik' },
+                  { id: 'neraca', label: 'Neraca' },
+                  { id: 'dompet', label: 'Dompet' },
+                  { id: 'buku', label: 'Buku Kas' },
+                ] as { id: CameraPreset; label: string }[]
+              ).map((item) => (
                 <button
-                  key={key}
+                  key={item.id}
                   type="button"
-                  onClick={() => handleSelectPreset(key)}
-                  className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
-                    preset === key
-                      ? 'bg-[#14532D] text-white'
+                  onClick={() => setPreset(item.id)}
+                  className={`px-2.5 py-1 rounded-lg transition-colors ${
+                    preset === item.id
+                      ? 'bg-[#14532D] text-white shadow-sm'
                       : 'text-[#57534E] hover:text-[#18181B]'
                   }`}
                 >
-                  {CAMERA_PRESETS[key].label}
+                  {item.label}
                 </button>
               ))}
             </div>
 
-            <div className="flex items-center gap-3">
-              <label className="flex items-center gap-2 text-xs font-medium text-[#57534E] whitespace-nowrap">
+            {/* Slider Bedah 3D & Reset */}
+            <div className="flex items-center gap-2.5 px-1">
+              <label className="flex items-center gap-1.5 text-[11px] font-semibold text-[#57534E]">
                 <span>Bedah 3D</span>
                 <input
                   type="range"
                   min={0}
                   max={1}
-                  step={0.05}
-                  value={explodeLevel}
-                  onChange={(e) => setExplodeLevel(Number(e.target.value))}
-                  aria-label="Geser bedah komponen 3D"
-                  className="w-24 accent-[#14532D]"
+                  step={0.01}
+                  value={explodeRatio}
+                  onChange={(e) => setExplodeRatio(parseFloat(e.target.value))}
+                  className="w-16 sm:w-20 accent-[#14532D] cursor-pointer"
                 />
               </label>
 
               <button
                 type="button"
                 onClick={() => {
-                  setExplodeLevel(0);
-                  handleSelectPreset('isometrik');
+                  setPreset('isometric');
+                  setExplodeRatio(0);
+                  setSelectedPin(null);
                 }}
-                aria-label="Reset kamera 3D"
-                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-[#18181B] border border-[#D6D3CB] rounded-md hover:bg-[#F3F1EB] whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-1 rounded-lg border border-[#D6D3CB] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#18181B] hover:bg-[#FAF9F5]"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
+                <RotateCcw className="w-3 h-3" />
                 <span>Reset</span>
               </button>
             </div>
           </div>
         )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
