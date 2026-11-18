@@ -1,5 +1,18 @@
+<<<<<<< HEAD
 ﻿.DS_Store
 Thumbs.db
 node_modules/
 .env
 *.log
+=======
+node_modules/
+build/
+dist/
+dev-dist/
+coverage/
+.aistudio/
+.DS_Store
+*.log
+.env*
+!.env.example
+>>>>>>> 38490ac97b31c28d59f4463110c9c3aa945f48a1

@@ -1,0 +1,21 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /bukukuUsers/{uid}/books/main {
+      function owner() {
+        return request.auth != null && request.auth.uid == uid && request.auth.token.email_verified == true;
+      }
+      function validBook() {
+        let data = request.resource.data;
+        return data.keys().hasOnly(['version', 'revision', 'payload', 'updatedAt'])
+          && data.version == 1 && data.revision is int && data.payload is string
+          && data.payload.size() > 0 && data.payload.size() <= 850000
+          && data.updatedAt == request.time;
+      }
+      allow get: if owner();
+      allow create: if owner() && validBook() && request.resource.data.revision == 1;
+      allow update: if owner() && validBook()
+        && request.resource.data.revision == resource.data.revision + 1;
+    }
+  }
+}
