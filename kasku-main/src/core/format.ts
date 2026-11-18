@@ -17,8 +17,29 @@ const NAMA_BULAN_ID = [
  * Format integer rupiah with dot thousand separators (e.g., 1234567 -> "1.234.567").
  */
 export function formatRibuan(amount: number): string {
+  const isNegative = amount < 0;
   const abs = Math.abs(Math.trunc(amount));
-  return abs.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const formatted = abs.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return isNegative ? `-${formatted}` : formatted;
+}
+
+/**
+ * Format integer rupiah for input fields / general display.
+ */
+export function formatRupiahInput(value: number | string): string {
+  if (value === undefined || value === null) return '0';
+  const num = typeof value === 'string' ? parseInt(value.replace(/[^0-9]/g, ''), 10) : value;
+  if (isNaN(num)) return '0';
+  return formatRibuan(num);
+}
+
+/**
+ * Parse Rupiah input string back to number.
+ */
+export function parseRupiahInput(str: string): number {
+  if (!str) return 0;
+  const clean = str.toString().replace(/[^0-9]/g, '');
+  return clean ? parseInt(clean, 10) : 0;
 }
 
 /**
@@ -27,7 +48,7 @@ export function formatRibuan(amount: number): string {
 export function formatRupiahTitle(amount: number): string {
   const rounded = Math.trunc(amount);
   if (rounded < 0) {
-    return `-Rp${formatRibuan(rounded)}`;
+    return `-Rp${formatRibuan(Math.abs(rounded))}`;
   }
   return `Rp${formatRibuan(rounded)}`;
 }
@@ -41,7 +62,7 @@ export function formatRupiahTitle(amount: number): string {
 export function formatKolomAngka(amount: number): string {
   const rounded = Math.trunc(amount);
   if (rounded === 0) return '-';
-  if (rounded < 0) return `(${formatRibuan(rounded)})`;
+  if (rounded < 0) return `(${formatRibuan(Math.abs(rounded))})`;
   return formatRibuan(rounded);
 }
 
